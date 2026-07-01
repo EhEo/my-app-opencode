@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161b22"/>
+      <stop offset="100%" stop-color="#0d1117"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bracket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#c9d1d9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+
+  <!-- Subtle top glow -->
+  <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="url(#glow)"/>
+
+  <!-- Code brackets < > -->
+  <g fill="url(#bracket)" fill-opacity="0.96">
+    <!-- Left bracket: '<' as a chevron -->
+    <path d="M 188 184
+             L 92 256
+             L 188 328
+             L 220 296
+             L 156 256
+             L 220 216
+             Z"/>
+    <!-- Right bracket: '>' as a chevron -->
+    <path d="M 324 184
+             L 420 256
+             L 324 328
+             L 292 296
+             L 356 256
+             L 292 216
+             Z"/>
+  </g>
+
+  <!-- Forward slash divider between brackets (subtle) -->
+  <path d="M 296 152 L 216 360 L 244 360 L 324 152 Z"
+        fill="#58a6ff" fill-opacity="0.28"/>
+
+  <!-- AI sparkle highlight (top-right) -->
+  <g transform="translate(388 124)">
+    <path d="M 0 -28
+             L 6 -6
+             L 28 0
+             L 6 6
+             L 0 28
+             L -6 6
+             L -28 0
+             L -6 -6 Z"
+          fill="#58a6ff"/>
+    <circle cx="0" cy="0" r="3" fill="#ffffff"/>
+  </g>
+</svg>
