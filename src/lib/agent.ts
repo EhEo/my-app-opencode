@@ -30,7 +30,7 @@ export interface AgentCallbacks {
   onToolStart(call: ToolCall): void;
   onToolEnd(call: ToolCall, result: string, error?: string): void;
   onFileChanged(path: string): void;
-  onDone(reason: "completed" | "aborted" | "max_iterations"): void;
+  onDone(reason: "completed" | "aborted" | "max_iterations", finalMessages?: ChatMessage[]): void;
   onError(err: Error): void;
 }
 
@@ -115,7 +115,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<void> {
 
     for (let iter = 0; iter < maxIter; iter++) {
       if (opts.signal?.aborted) {
-        callbacks.onDone("aborted");
+        callbacks.onDone("aborted", working);
         return;
       }
 
@@ -168,7 +168,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<void> {
 
       if (finalToolCalls.length === 0) {
         callbacks.onAssistantText(content);
-        callbacks.onDone("completed");
+        callbacks.onDone("completed", working);
         return;
       }
 
@@ -197,7 +197,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<void> {
       }
     }
 
-    callbacks.onDone("max_iterations");
+    callbacks.onDone("max_iterations", working);
   } catch (err) {
     callbacks.onError(err instanceof Error ? err : new Error(String(err)));
   }

@@ -178,7 +178,7 @@ export function EditorPane({
     editor.revealPositionInCenter({ lineNumber: targetLine, column: targetColumn });
     editor.focus();
     onJumpConsumed?.();
-  }, [jumpRequestNonce, file, onJumpConsumed]);
+  }, [jumpRequestNonce, jumpRequest, file, onJumpConsumed]);
 
   if (file === null) {
     return (

@@ -248,8 +248,10 @@ export function ChatPanel({
           onToolEnd: (call, result, error) =>
             updateToolCard(call.id, result, error),
           onFileChanged: (path) => onFileChanged(path),
-          onDone: () => {
-            void 0;
+          onDone: (_reason, finalMessages) => {
+            if (finalMessages !== undefined && finalMessages.length > 0) {
+              setMessages(finalMessages);
+            }
           },
           onError: (err) => {
             addErrorMessage(err.message);

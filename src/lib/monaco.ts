@@ -1,16 +1,20 @@
 import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
+import TsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
+import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
+import CssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
+import HtmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
 
 loader.config({ monaco });
 
-const editorWorker = new EditorWorker();
-
 self.MonacoEnvironment = {
-  getWorker(_workerId: string, _label: string): Worker {
-    void _workerId;
-    void _label;
-    return editorWorker;
+  getWorker(_workerId: string, label: string): Worker {
+    if (label === "typescript" || label === "javascript") return new TsWorker();
+    if (label === "json") return new JsonWorker();
+    if (label === "css" || label === "scss" || label === "less") return new CssWorker();
+    if (label === "html" || label === "handlebars" || label === "razor") return new HtmlWorker();
+    return new EditorWorker();
   },
 };
 

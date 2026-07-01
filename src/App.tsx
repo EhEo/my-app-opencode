@@ -178,16 +178,16 @@ function App(): React.JSX.Element {
         delete next[path];
         return next;
       });
+      const closedIdx = tabsOrderRef.current.indexOf(path);
       tabsOrderRef.current = tabsOrderRef.current.filter((p) => p !== path);
 
       if (activePath === path) {
-        const remaining = tabsOrderRef.current.filter((p) => p !== path);
+        const remaining = tabsOrderRef.current;
         if (remaining.length === 0) {
           setActivePath(null);
         } else {
-          const idx = tabsOrderRef.current.indexOf(path);
           const fallback =
-            remaining[idx] ?? remaining[idx - 1] ?? remaining[0] ?? null;
+            remaining[closedIdx] ?? remaining[closedIdx - 1] ?? remaining[0] ?? null;
           setActivePath(fallback);
         }
       }

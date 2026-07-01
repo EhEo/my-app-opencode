@@ -252,7 +252,7 @@ fn git_status(state: State<'_, AppState>) -> Result<Vec<GitFileStatus>, String> 
             _ => continue,
         };
         results.push(GitFileStatus {
-            path: path.to_string(),
+            path: root.join(path).to_string_lossy().into_owned(),
             status: status.to_string(),
         });
     }
@@ -335,8 +335,8 @@ fn search_workspace(
         for (idx, line) in content.lines().enumerate() {
             if let Some(mat) = compiled.find(line) {
                 let start = mat.start();
-                let prefix_start = start.saturating_sub(40);
-                let suffix_end = (start + mat.len() + 40).min(line.len());
+                let prefix_start = floor_char_boundary(line, start.saturating_sub(40));
+                let suffix_end = ceil_char_boundary(line, (start + mat.len() + 40).min(line.len()));
                 let prefix = &line[prefix_start..start];
                 let matched = &line[start..start + mat.len()];
                 let suffix = &line[start + mat.len()..suffix_end];
@@ -365,6 +365,16 @@ fn search_workspace(
         }
     }
     Ok(results)
+}
+
+fn floor_char_boundary(s: &str, mut i: usize) -> usize {
+    while i > 0 && !s.is_char_boundary(i) { i -= 1; }
+    i
+}
+
+fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
+    while i < s.len() && !s.is_char_boundary(i) { i += 1; }
+    i
 }
 
 fn glob_to_regex(glob: &str) -> Result<Regex, String> {
@@ -491,8 +501,9 @@ struct CommandResult {
 fn run_command(command: String, state: State<'_, AppState>) -> Result<CommandResult, String> {
     let root = require_root(&state)?;
 
-    let mut child = Command::new("sh")
-        .arg("-c")
+    let (shell, flag): (&str, &str) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
+    let mut child = Command::new(shell)
+        .arg(flag)
         .arg(&command)
         .current_dir(&root)
         .stdin(Stdio::null())
@@ -663,14 +674,8 @@ fn skill_install(
     Ok(())
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct SkillInfo {
-    name: String,
-}
-
 #[tauri::command(rename_all = "camelCase")]
-fn skill_list(app: AppHandle) -> Result<Vec<SkillInfo>, String> {
+fn skill_list(app: AppHandle) -> Result<Vec<String>, String> {
     let root = skills_root(&app)?;
     if !root.exists() {
         return Ok(Vec::new());
@@ -687,10 +692,7 @@ fn skill_list(app: AppHandle) -> Result<Vec<SkillInfo>, String> {
         }
     }
     names.sort();
-    Ok(names
-        .into_iter()
-        .map(|name| SkillInfo { name })
-        .collect())
+    Ok(names)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -745,7 +747,13 @@ async fn terminal_create(
     rows: u16,
     on_event: Channel<TerminalEvent>,
 ) -> Result<String, String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
+        if cfg!(windows) {
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+        } else {
+            "/bin/bash".to_string()
+        }
+    });
     let mut cmd = CommandBuilder::new(&shell);
     if let Some(c) = cwd.as_ref() {
         if !c.is_empty() {
