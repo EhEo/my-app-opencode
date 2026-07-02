@@ -2170,5 +2170,8 @@ button {
    otherwise the minimap overlays the preview's right edge and hides wrapped
    text under it. */
 .editor-pane__preview { position: absolute; inset: 0; z-index: 30; overflow-y: auto; overflow-x: hidden; padding: 16px 24px; background: var(--bg-editor); }
+/* Preview text matches the editor's 14px (root is 13px, which read smaller). */
+.editor-pane__preview .chat-md { font-size: 14px; line-height: 1.65; }
+.editor-pane__preview .chat-md table { font-size: 14px; }
 
 .editor-column__viewer { position: absolute; inset: 0; z-index: 4; background: var(--bg-editor); }

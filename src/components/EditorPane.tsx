@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type * as monacoTypes from "monaco-editor";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { getLanguageId } from "../lib/language";
@@ -283,7 +284,7 @@ export function EditorPane({
         <div className="editor-pane__preview">
           <div className="chat-md">
             <Markdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
               rehypePlugins={[rehypeRaw, [rehypeSanitize, previewSanitizeSchema]]}
               components={{
                 ...baseMarkdownComponents,
