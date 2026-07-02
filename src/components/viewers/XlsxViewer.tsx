@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { fs } from "../../lib/fs";
 import { base64ToUint8Array } from "../../lib/bytes";
-import { parseXlsx } from "../../lib/xlsxData";
 
 export function XlsxViewer({ path }: { path: string }): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -19,6 +18,7 @@ export function XlsxViewer({ path }: { path: string }): React.JSX.Element {
     void (async () => {
       try {
         const { base64 } = await fs.readFileBytes(path);
+        const { parseXlsx } = await import("../../lib/xlsxData");
         const data = parseXlsx(base64ToUint8Array(base64));
         const mod = await import("x-data-spreadsheet");
         await import("x-data-spreadsheet/dist/xspreadsheet.css");
@@ -28,6 +28,7 @@ export function XlsxViewer({ path }: { path: string }): React.JSX.Element {
           mode: "read",
           showToolbar: false,
           showContextmenu: false,
+          view: { height: () => host.clientHeight, width: () => host.clientWidth },
         });
         grid.loadData(data);
         if (!cancelled) setLoading(false);
@@ -38,7 +39,10 @@ export function XlsxViewer({ path }: { path: string }): React.JSX.Element {
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (host !== null) host.innerHTML = "";
+    };
   }, [path]);
 
   return (
