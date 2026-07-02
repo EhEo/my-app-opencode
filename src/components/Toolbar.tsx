@@ -1,3 +1,5 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
 interface ToolbarProps {
   onOpenFolder: () => void;
   onSave: () => void;
@@ -24,8 +26,8 @@ export function Toolbar({
   terminalVisible,
 }: ToolbarProps): React.JSX.Element {
   return (
-    <header className="toolbar">
-      <div className="toolbar__left">
+    <header className="toolbar" data-tauri-drag-region>
+      <div className="toolbar__left" data-tauri-drag-region>
         <button
           type="button"
           className="toolbar__btn toolbar__btn--primary"
@@ -49,14 +51,14 @@ export function Toolbar({
           ) : null}
         </button>
       </div>
-      <div className="toolbar__center">
-        <span className="toolbar__file">
+      <div className="toolbar__center" data-tauri-drag-region>
+        <span className="toolbar__file" data-tauri-drag-region>
           {dirty && canSave ? (
             <span className="toolbar__dirty-mark" aria-hidden="true">
               ●
             </span>
           ) : null}
-          <span className="toolbar__file-name">
+          <span className="toolbar__file-name" data-tauri-drag-region>
             {fileName ?? "opencode-desktop"}
           </span>
           {dirty && canSave ? (
@@ -64,7 +66,7 @@ export function Toolbar({
           ) : null}
         </span>
       </div>
-      <div className="toolbar__right">
+      <div className="toolbar__right" data-tauri-drag-region>
         <button
           type="button"
           className={
@@ -100,9 +102,69 @@ export function Toolbar({
         >
           <GearIcon />
         </button>
-        <span className="toolbar__brand">opencode</span>
+        <WindowControls />
       </div>
     </header>
+  );
+}
+
+// Custom window controls for the frameless window (decorations: false).
+function WindowControls(): React.JSX.Element {
+  const win = getCurrentWindow();
+  return (
+    <div className="window-controls">
+      <button
+        type="button"
+        className="window-controls__btn"
+        onClick={() => {
+          void win.minimize();
+        }}
+        title="Minimize"
+        aria-label="Minimize"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="window-controls__btn"
+        onClick={() => {
+          void win.toggleMaximize();
+        }}
+        title="Maximize"
+        aria-label="Maximize"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <rect
+            x="0.5"
+            y="0.5"
+            width="9"
+            height="9"
+            stroke="currentColor"
+            strokeWidth="1"
+            fill="none"
+          />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="window-controls__btn window-controls__btn--close"
+        onClick={() => {
+          void win.close();
+        }}
+        title="Close"
+        aria-label="Close"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path
+            d="M0 0l10 10M10 0L0 10"
+            stroke="currentColor"
+            strokeWidth="1"
+          />
+        </svg>
+      </button>
+    </div>
   );
 }
 

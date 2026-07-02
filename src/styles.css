@@ -239,6 +239,38 @@ button {
   font-style: italic;
 }
 
+/* Custom window controls (frameless window title bar) */
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  height: var(--toolbar-height);
+  margin-left: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 100%;
+  border: none;
+  background-color: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.window-controls__btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.window-controls__btn--close:hover {
+  background-color: #e81123;
+  color: #ffffff;
+}
+
 /* ───────── File Tree ───────── */
 
 .file-tree {
