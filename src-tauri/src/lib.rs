@@ -732,6 +732,30 @@ async fn run_command(command: String, state: State<'_, AppState>) -> Result<Comm
         .map_err(|e| e.to_string())?
 }
 
+/// Decode subprocess output bytes to a String. Modern tools emit UTF-8, but
+/// Windows console built-ins (`date`, `dir`, …) emit the active OEM code page
+/// (e.g. CP949 on Korean Windows), which `from_utf8_lossy` would mangle into
+/// replacement chars. Strategy: prefer strict UTF-8 (valid UTF-8 is a strong
+/// signal and covers git/node/etc.); on failure, fall back to the OEM code
+/// page on Windows, or lossy UTF-8 elsewhere.
+fn decode_os_bytes(bytes: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.to_owned();
+    }
+    #[cfg(windows)]
+    {
+        // GetOEMCP lives in kernel32 (always linked); avoids a windows-sys dep.
+        extern "system" {
+            fn GetOEMCP() -> u32;
+        }
+        let cp = unsafe { GetOEMCP() } as u16;
+        if let Some(enc) = codepage::to_encoding(cp) {
+            return enc.decode(bytes).0.into_owned();
+        }
+    }
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
 fn run_command_blocking(command: String, root: PathBuf) -> Result<CommandResult, String> {
     let mut builder = build_shell_command(&command);
     builder
@@ -790,8 +814,8 @@ fn run_command_blocking(command: String, root: PathBuf) -> Result<CommandResult,
             let stdout = stdout_thread.join().unwrap_or_default();
             let stderr = stderr_thread.join().unwrap_or_default();
             Ok(CommandResult {
-                stdout: String::from_utf8_lossy(&stdout).into_owned(),
-                stderr: String::from_utf8_lossy(&stderr).into_owned(),
+                stdout: decode_os_bytes(&stdout),
+                stderr: decode_os_bytes(&stderr),
                 exit_code: status.code().unwrap_or(-1),
             })
         }
