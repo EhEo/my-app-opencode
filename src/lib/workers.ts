@@ -1,3 +1,4 @@
+import { runExec } from "./agentExec";
 import type { WorkerBackend, StageConfig } from "./settings";
 
 export type { WorkerBackend, StageConfig } from "./settings";
@@ -28,4 +29,13 @@ export function resolveBackend(
 
 export function buildCliArgs(argsTemplate: string[], brief: string): string[] {
   return argsTemplate.map((a) => (a === "@brief" ? brief : a));
+}
+
+export async function detectCli(command: string): Promise<boolean> {
+  try {
+    const res = await runExec({ program: command, args: ["--version"], timeoutSec: 5 });
+    return res.code === 0;
+  } catch {
+    return false;
+  }
 }
