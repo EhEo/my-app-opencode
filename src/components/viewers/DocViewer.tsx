@@ -1,6 +1,7 @@
 import type { FileKind } from "../../lib/fileKind";
 import { ImageViewer } from "./ImageViewer";
 import { PdfViewer } from "./PdfViewer";
+import { DocxViewer } from "./DocxViewer";
 import { UnsupportedViewer } from "./UnsupportedViewer";
 
 export function DocViewer({
@@ -12,7 +13,8 @@ export function DocViewer({
 }): React.JSX.Element {
   if (kind === "image") return <ImageViewer path={path} />;
   if (kind === "pdf") return <PdfViewer path={path} />;
-  if (kind === "docx" || kind === "xlsx" || kind === "pptx") {
+  if (kind === "docx") return <DocxViewer path={path} />;
+  if (kind === "xlsx" || kind === "pptx") {
     return (
       <UnsupportedViewer
         path={path}

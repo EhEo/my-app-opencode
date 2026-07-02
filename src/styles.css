@@ -2055,6 +2055,9 @@ button {
 .doc-viewer__pdf { width: 100%; height: 100%; overflow: auto; background: #2a2a2a; }
 .doc-viewer__pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; }
 .doc-viewer__pdf-page { max-width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.4); background: #fff; }
+.doc-viewer__docx { width: 100%; height: 100%; overflow: auto; background: #525659; padding: 16px; }
+.doc-viewer__docx-body { background: #fff; color: #000; margin: 0 auto; }
+.doc-viewer__docx-body .docx-wrapper { background: transparent; padding: 0; }
 
 .editor-pane__preview-toggle {
   position: absolute;
