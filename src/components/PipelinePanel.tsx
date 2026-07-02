@@ -182,48 +182,6 @@ export function PipelinePanel({
   return (
     <div className="pipeline-panel">
       <UsageStrip snapshot={snapshot} />
-      <div className="pipeline-panel__input-row">
-        <textarea
-          className="chat-input__field"
-          rows={2}
-          placeholder={
-            workspaceRoot === null ? "Open a folder first…" : "Describe the task for the pipeline…"
-          }
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          spellCheck={false}
-        />
-        {running ? (
-          <button type="button" className="chat-input__btn chat-input__btn--stop" onClick={handleStop}>
-            Stop
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="chat-input__btn chat-input__btn--send"
-            onClick={() => void handleRun()}
-            disabled={!canRun}
-          >
-            Run
-          </button>
-        )}
-      </div>
-
-      {guardPrompt !== null ? (
-        <div className="pipeline-panel__guard">
-          <span>⚠ 사용량이 예산 경고 임계값을 넘었습니다. 계속할까요?</span>
-          <button type="button" className="toolbar__btn" onClick={() => resolveGuard(true)}>
-            계속
-          </button>
-          <button type="button" className="toolbar__btn" onClick={() => resolveGuard(false)}>
-            중지
-          </button>
-        </div>
-      ) : null}
-
-      {runError !== null ? (
-        <div className="pipeline-panel__error">{runError}</div>
-      ) : null}
 
       <div className="pipeline-panel__stages">
         {stages.map((s) => (
@@ -251,6 +209,54 @@ export function PipelinePanel({
           </div>
         ))}
       </div>
+
+      {guardPrompt !== null ? (
+        <div className="pipeline-panel__guard">
+          <span>⚠ 사용량이 예산 경고 임계값을 넘었습니다. 계속할까요?</span>
+          <button type="button" className="toolbar__btn" onClick={() => resolveGuard(true)}>
+            계속
+          </button>
+          <button type="button" className="toolbar__btn" onClick={() => resolveGuard(false)}>
+            중지
+          </button>
+        </div>
+      ) : null}
+
+      {runError !== null ? (
+        <div className="pipeline-panel__error">{runError}</div>
+      ) : null}
+
+      <footer className="pipeline-panel__footer">
+        <div className="pipeline-panel__input-row">
+          <textarea
+            className="chat-input__field"
+            rows={2}
+            placeholder={
+              workspaceRoot === null ? "Open a folder first…" : "Describe the task for the pipeline…"
+            }
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            spellCheck={false}
+          />
+          {running ? (
+            <button type="button" className="chat-input__btn chat-input__btn--stop" onClick={handleStop}>
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="chat-input__btn chat-input__btn--send"
+              onClick={() => void handleRun()}
+              disabled={!canRun}
+            >
+              Run
+            </button>
+          )}
+        </div>
+        <div className="pipeline-panel__meta">
+          {stages.map((s) => `${s.label}: ${s.backendId ?? "인앱"}`).join("  ·  ")}
+        </div>
+      </footer>
     </div>
   );
 }
