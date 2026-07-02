@@ -2059,7 +2059,8 @@ button {
 .editor-pane__preview-toggle {
   position: absolute;
   top: 8px;
-  right: 16px;
+  /* left side, clear of the minimap which sits on the right */
+  left: 12px;
   z-index: 6; /* above the preview overlay (2) and the whole Monaco subtree */
   height: 24px;
   padding: 0 10px;
