@@ -14,6 +14,11 @@
 *.log
 *.tmp
 
+# 임시·참고 파일 — git 추적 안 함
+test.md
+*.vsix
+스크린샷*.png
+
 # 런타임 캐시 — 로컬 경로·UUID 포함, git 추적 안 함
 cache/
 
