@@ -240,6 +240,50 @@ struct GitFileStatus {
     status: String,
 }
 
+#[derive(serde::Serialize, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ToolUsage {
+    input_tokens: u64,
+    output_tokens: u64,
+}
+
+#[derive(serde::Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UsageSummary {
+    by_tool: std::collections::BTreeMap<String, ToolUsage>,
+}
+
+/// Recursively sum any nested `usage` object's token fields into `acc`.
+/// Tolerant of both Claude (`input_tokens`/`output_tokens`) and
+/// OpenAI/Codex (`prompt_tokens`/`completion_tokens`) shapes.
+fn add_usage_from_value(v: &serde_json::Value, acc: &mut ToolUsage) {
+    add_usage_from_value_depth(v, acc, 0);
+}
+
+fn add_usage_from_value_depth(v: &serde_json::Value, acc: &mut ToolUsage, depth: u32) {
+    if depth > 100 {
+        return;
+    }
+    match v {
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::Object(u)) = map.get("usage") {
+                let get = |k: &str| u.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
+                acc.input_tokens += get("input_tokens") + get("prompt_tokens");
+                acc.output_tokens += get("output_tokens") + get("completion_tokens");
+            }
+            for (_k, val) in map {
+                add_usage_from_value_depth(val, acc, depth + 1);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for val in arr {
+                add_usage_from_value_depth(val, acc, depth + 1);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[tauri::command(rename_all = "camelCase")]
 async fn git_status(state: State<'_, AppState>) -> Result<Vec<GitFileStatus>, String> {
     let root = require_root(&state)?;
@@ -773,6 +817,42 @@ fn set_settings(app: AppHandle, settings: serde_json::Value) -> Result<(), Strin
     })
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn read_usage_logs(app: AppHandle) -> Result<UsageSummary, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let mut summary = UsageSummary::default();
+    let sources = [
+        ("claude", home.join(".claude").join("projects")),
+        ("codex", home.join(".codex").join("sessions")),
+    ];
+    for (tool, dir) in sources {
+        if !dir.exists() {
+            continue;
+        }
+        let mut acc = ToolUsage::default();
+        for entry in WalkDir::new(&dir).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            if entry.path().extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(entry.path()) {
+                for line in content.lines() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                        add_usage_from_value(&v, &mut acc);
+                    }
+                }
+            }
+        }
+        summary.by_tool.insert(tool.to_string(), acc);
+    }
+    Ok(summary)
+}
+
 // --- Skills --------------------------------------------------------------
 // User-installed Anthropic-style "Agent Skills" (SKILL.md + folders).
 // Stored verbatim under <app_config_dir>/skills/<name>/ so the webview can
@@ -1048,6 +1128,218 @@ fn terminal_kill(session_id: String) -> Result<(), String> {
     }
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum ExecEvent {
+    Stdout { data: Vec<u8> },
+    Stderr { data: Vec<u8> },
+    Exit { code: i32 },
+}
+
+// id -> live child handle, for cancellation from agent_exec_kill. Holding the
+// Child (not a bare PID) keeps the PID reserved until we reap, so a tree-kill
+// can never hit a recycled PID.
+type ExecMap = Mutex<HashMap<String, Arc<Mutex<std::process::Child>>>>;
+static EXECS: std::sync::OnceLock<ExecMap> = std::sync::OnceLock::new();
+fn execs() -> &'static ExecMap {
+    EXECS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// Removes an exec's registry entry when the exec task's scope ends — including
+// on panic in the on_event callback — so dead entries can't accumulate.
+struct ExecGuard(String);
+impl Drop for ExecGuard {
+    fn drop(&mut self) {
+        if let Ok(mut g) = execs().lock() {
+            g.remove(&self.0);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn kill_pid_tree(pid: u32) {
+    let mut cmd = Command::new("taskkill");
+    cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
+    no_window(&mut cmd);
+    let _ = cmd.output();
+}
+#[cfg(not(windows))]
+fn kill_pid_tree(pid: u32) {
+    let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+}
+
+/// Spawn `program args`, stream stdout/stderr as `ExecEvent`s to `on_event`,
+/// hand the live child handle to `on_spawn` (for cancellation), and emit a
+/// final `Exit` event. Synchronous: returns after the child exits and both
+/// pipes drain. No built-in timeout by design — long-running agents stream
+/// until they finish or the caller cancels via agent_exec_kill.
+fn exec_stream<S, E>(
+    program: &str,
+    args: &[String],
+    cwd: Option<String>,
+    stdin: Option<String>,
+    env: std::collections::HashMap<String, String>,
+    on_spawn: S,
+    mut on_event: E,
+) -> Result<(), String>
+where
+    S: FnOnce(Arc<Mutex<std::process::Child>>),
+    E: FnMut(ExecEvent),
+{
+    let mut builder = Command::new(program);
+    builder
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        builder.current_dir(dir);
+    }
+    for (k, v) in env {
+        builder.env(k, v);
+    }
+    no_window(&mut builder);
+
+    let mut child = builder.spawn().map_err(|e| e.to_string())?;
+
+    if let Some(data) = stdin {
+        if let Some(mut si) = child.stdin.take() {
+            use std::io::Write;
+            let _ = si.write_all(data.as_bytes());
+        }
+    } else {
+        child.stdin.take();
+    }
+
+    let mut out = child.stdout.take().expect("stdout piped");
+    let mut err = child.stderr.take().expect("stderr piped");
+
+    let child = Arc::new(Mutex::new(child));
+    on_spawn(child.clone());
+
+    let (tx, rx) = mpsc::channel::<ExecEvent>();
+    let tx_out = tx.clone();
+    let h_out = thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match out.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if tx_out.send(ExecEvent::Stdout { data: buf[..n].to_vec() }).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let tx_err = tx.clone();
+    let h_err = thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match err.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if tx_err.send(ExecEvent::Stderr { data: buf[..n].to_vec() }).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    drop(tx);
+
+    for ev in rx {
+        on_event(ev);
+    }
+    let _ = h_out.join();
+    let _ = h_err.join();
+
+    let code = {
+        if let Ok(mut g) = child.lock() {
+            g.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1)
+        } else {
+            -1
+        }
+    };
+    on_event(ExecEvent::Exit { code });
+    Ok(())
+}
+
+/// Spawn an arbitrary CLI program and stream its output to the webview.
+///
+/// SECURITY: unlike run_command / the fs commands, this intentionally does NOT
+/// confine `program`/`cwd` to the workspace root (no validate_path). It is a
+/// deliberately unsandboxed exec surface for launching agent CLIs, reachable
+/// only from the app's own trusted webview. Callers must treat `program`/`args`
+/// as trusted. There is no built-in timeout; the caller cancels via
+/// agent_exec_kill.
+#[tauri::command(rename_all = "camelCase")]
+async fn agent_exec_start(
+    id: String,
+    program: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+    stdin: Option<String>,
+    env: Option<HashMap<String, String>>,
+    on_event: Channel<ExecEvent>,
+) -> Result<(), String> {
+    let id_spawn = id.clone();
+    tokio::task::spawn_blocking(move || {
+        {
+            let g = execs().lock().map_err(|e| e.to_string())?;
+            if g.contains_key(&id) {
+                return Err(format!("exec id already running: {id}"));
+            }
+        }
+        // Armed only after the dup-id check passes, so a rejected duplicate
+        // never removes the in-flight exec's entry.
+        let _guard = ExecGuard(id.clone());
+        exec_stream(
+            &program,
+            &args,
+            cwd,
+            stdin,
+            env.unwrap_or_default(),
+            |child| {
+                if let Ok(mut g) = execs().lock() {
+                    g.insert(id_spawn.clone(), child);
+                }
+            },
+            |ev| {
+                let _ = on_event.send(ev);
+            },
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn agent_exec_kill(id: String) -> Result<(), String> {
+    let handle = {
+        let g = execs().lock().map_err(|e| e.to_string())?;
+        g.get(&id).cloned()
+    };
+    if let Some(child) = handle {
+        if let Ok(mut g) = child.lock() {
+            // Hold the lock across the whole kill so exec_stream cannot reap
+            // (and free the PID) underneath us. Only tree-kill if the child is
+            // still running; if it already exited, its PID may be recycled and
+            // must not be targeted.
+            match g.try_wait() {
+                Ok(Some(_)) => {}
+                _ => {
+                    let pid = g.id();
+                    kill_pid_tree(pid);
+                    let _ = g.kill();
+                    let _ = g.wait();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 // --- LLM HTTP proxy ------------------------------------------------------
 // The webview cannot reach certain external endpoints (e.g. api.minimax.io);
 // Rust's network path works for all of them. The openai SDK is wired (in llm.ts)
@@ -1209,6 +1501,9 @@ pub fn run() {
             run_command,
             get_settings,
             set_settings,
+            read_usage_logs,
+            agent_exec_start,
+            agent_exec_kill,
             proxy_request,
             proxy_abort,
             skill_install,
@@ -1222,4 +1517,64 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::{add_usage_from_value, ToolUsage};
+
+    #[test]
+    fn extracts_nested_message_usage() {
+        let line = r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5}}}"#;
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        let mut acc = ToolUsage::default();
+        add_usage_from_value(&v, &mut acc);
+        assert_eq!(acc.input_tokens, 10);
+        assert_eq!(acc.output_tokens, 5);
+    }
+
+    #[test]
+    fn supports_prompt_completion_aliases() {
+        let line = r#"{"usage":{"prompt_tokens":3,"completion_tokens":7}}"#;
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        let mut acc = ToolUsage::default();
+        add_usage_from_value(&v, &mut acc);
+        assert_eq!(acc.input_tokens, 3);
+        assert_eq!(acc.output_tokens, 7);
+    }
+
+    #[test]
+    fn ignores_objects_without_usage() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"foo":1,"bar":{"baz":2}}"#).unwrap();
+        let mut acc = ToolUsage::default();
+        add_usage_from_value(&v, &mut acc);
+        assert_eq!(acc.input_tokens, 0);
+        assert_eq!(acc.output_tokens, 0);
+    }
+}
+
+#[cfg(test)]
+mod exec_tests {
+    use super::{exec_stream, ExecEvent};
+    use std::collections::HashMap;
+
+    #[test]
+    fn streams_stdout_and_exit_zero() {
+        let (program, args): (&str, Vec<String>) = if cfg!(windows) {
+            ("cmd", vec!["/C".into(), "echo".into(), "hello".into()])
+        } else {
+            ("sh", vec!["-c".into(), "echo hello".into()])
+        };
+        let mut events: Vec<ExecEvent> = Vec::new();
+        exec_stream(program, &args, None, None, HashMap::new(), |_child| {}, |e| events.push(e))
+            .unwrap();
+
+        let stdout: Vec<u8> = events
+            .iter()
+            .filter_map(|e| if let ExecEvent::Stdout { data } = e { Some(data.clone()) } else { None })
+            .flatten()
+            .collect();
+        assert!(String::from_utf8_lossy(&stdout).contains("hello"));
+        assert!(matches!(events.last(), Some(ExecEvent::Exit { code: 0 })));
+    }
 }
