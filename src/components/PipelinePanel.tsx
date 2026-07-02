@@ -43,10 +43,22 @@ export function PipelinePanel({
   const [stages, setStages] = useState<StageView[]>(() => initialStages(null));
   const [snapshot, setSnapshot] = useState<UsageSnapshot | null>(null);
   const [guardPrompt, setGuardPrompt] = useState<{ resolve: (ok: boolean) => void } | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const sessionRef = useRef<SessionUsage>(new SessionUsage());
   const sessionTokensRef = useRef(0);
+  const guardPromptRef = useRef<{ resolve: (ok: boolean) => void } | null>(null);
+  useEffect(() => {
+    guardPromptRef.current = guardPrompt;
+  }, [guardPrompt]);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      guardPromptRef.current?.resolve(false);
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +106,7 @@ export function PipelinePanel({
     sessionRef.current = new SessionUsage();
     sessionTokensRef.current = 0;
     setSnapshot(null);
+    setRunError(null);
     setStages((prev) => prev.map((s) => ({ ...s, status: "pending", output: "" })));
 
     const ac = new AbortController();
@@ -138,8 +151,7 @@ export function PipelinePanel({
         },
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      void msg;
+      setRunError(e instanceof Error ? e.message : String(e));
     } finally {
       setRunning(false);
       abortRef.current = null;
@@ -207,6 +219,10 @@ export function PipelinePanel({
             중지
           </button>
         </div>
+      ) : null}
+
+      {runError !== null ? (
+        <div className="pipeline-panel__error">{runError}</div>
       ) : null}
 
       <div className="pipeline-panel__stages">
