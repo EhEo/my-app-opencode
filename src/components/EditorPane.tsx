@@ -273,14 +273,16 @@ export function EditorPane({
         }}
       />
       {previewable ? (
-        <button
-          type="button"
-          className="editor-pane__preview-toggle toolbar__btn"
-          onClick={() => setPreview((v) => !v)}
-          title={preview ? "편집으로" : "미리보기"}
-        >
-          {preview ? "편집" : "미리보기"}
-        </button>
+        <div className="editor-pane__actions">
+          <button
+            type="button"
+            className="editor-pane__preview-toggle toolbar__btn"
+            onClick={() => setPreview((v) => !v)}
+            title={preview ? "편집으로" : "미리보기"}
+          >
+            {preview ? "편집" : "미리보기"}
+          </button>
+        </div>
       ) : null}
       {isHtml && preview && file !== null ? (
         <div className="editor-pane__preview editor-pane__preview--html">
