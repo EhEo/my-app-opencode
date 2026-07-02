@@ -1,4 +1,6 @@
 allowBuilds:
-  esbuild: set this to true or false
+  core-js: true
+  esbuild: true
+  x-data-spreadsheet: true
 onlyBuiltDependencies:
   - esbuild
