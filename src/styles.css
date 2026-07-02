@@ -2058,9 +2058,9 @@ button {
 
 .editor-pane__preview-toggle {
   position: absolute;
-  top: 8px;
-  /* left side, clear of the minimap which sits on the right */
-  left: 12px;
+  /* bottom-right corner — clears the top of the minimap so file content isn't covered */
+  bottom: 12px;
+  right: 16px;
   z-index: 6; /* above the preview overlay (2) and the whole Monaco subtree */
   height: 24px;
   padding: 0 10px;
