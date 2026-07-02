@@ -365,14 +365,14 @@ export function ChatPanel({
         </span>
       </header>
 
-      {mode === "pipeline" ? (
-        <PipelinePanel
-          workspaceRoot={workspaceRoot}
-          activeFilePath={activeFilePath}
-          openFilePaths={openFilePaths}
-        />
-      ) : (
-        <>
+      {/* Both views stay mounted; the inactive one is hidden with display:none
+          rather than unmounted. Unmounting the pipeline aborted its in-flight
+          run and wiped its state on every mode switch (same reasoning as the
+          always-mounted terminal in App.tsx). */}
+      <div
+        className="chat-panel__view"
+        style={{ display: mode === "chat" ? undefined : "none" }}
+      >
           <div
             ref={scrollContainerRef}
             className="chat-messages"
@@ -459,8 +459,17 @@ export function ChatPanel({
               </div>
             </div>
           </footer>
-        </>
-      )}
+      </div>
+      <div
+        className="chat-panel__view"
+        style={{ display: mode === "pipeline" ? undefined : "none" }}
+      >
+        <PipelinePanel
+          workspaceRoot={workspaceRoot}
+          activeFilePath={activeFilePath}
+          openFilePaths={openFilePaths}
+        />
+      </div>
     </aside>
   );
 }
