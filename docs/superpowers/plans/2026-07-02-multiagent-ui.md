@@ -249,10 +249,25 @@ export function PipelinePanel({
   const [stages, setStages] = useState<StageView[]>(() => initialStages(null));
   const [snapshot, setSnapshot] = useState<UsageSnapshot | null>(null);
   const [guardPrompt, setGuardPrompt] = useState<{ resolve: (ok: boolean) => void } | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const sessionRef = useRef<SessionUsage>(new SessionUsage());
   const sessionTokensRef = useRef(0);
+  // Mirror guardPrompt in a ref so the unmount cleanup sees the latest without
+  // re-subscribing, and resolve any open prompt on unmount so a paused
+  // runPipeline (awaiting onGuardPause) can't hang forever.
+  const guardPromptRef = useRef<{ resolve: (ok: boolean) => void } | null>(null);
+  useEffect(() => {
+    guardPromptRef.current = guardPrompt;
+  }, [guardPrompt]);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      guardPromptRef.current?.resolve(false);
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -300,6 +315,7 @@ export function PipelinePanel({
     sessionRef.current = new SessionUsage();
     sessionTokensRef.current = 0;
     setSnapshot(null);
+    setRunError(null);
     setStages((prev) => prev.map((s) => ({ ...s, status: "pending", output: "" })));
 
     const ac = new AbortController();
@@ -344,8 +360,7 @@ export function PipelinePanel({
         },
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      void msg;
+      setRunError(e instanceof Error ? e.message : String(e));
     } finally {
       setRunning(false);
       abortRef.current = null;
@@ -415,6 +430,10 @@ export function PipelinePanel({
         </div>
       ) : null}
 
+      {runError !== null ? (
+        <div className="pipeline-panel__error">{runError}</div>
+      ) : null}
+
       <div className="pipeline-panel__stages">
         {stages.map((s) => (
           <div key={s.id} className={`pipeline-stage pipeline-stage--${s.status}`}>
@@ -458,6 +477,7 @@ Append to `src/styles.css`:
   display: flex; align-items: center; gap: 8px; padding: 6px 10px;
   background: var(--bg-active-soft); color: var(--warn); font-size: 12px;
 }
+.pipeline-panel__error { padding: 6px 10px; color: var(--danger); font-size: 12px; }
 .pipeline-panel__stages { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
 .pipeline-stage { border: 1px solid var(--border-subtle); border-radius: 4px; margin-bottom: 8px; }
 .pipeline-stage__head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
