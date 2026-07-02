@@ -240,6 +240,43 @@ struct GitFileStatus {
     status: String,
 }
 
+#[derive(serde::Serialize, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ToolUsage {
+    input_tokens: u64,
+    output_tokens: u64,
+}
+
+#[derive(serde::Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct UsageSummary {
+    by_tool: std::collections::BTreeMap<String, ToolUsage>,
+}
+
+/// Recursively sum any nested `usage` object's token fields into `acc`.
+/// Tolerant of both Claude (`input_tokens`/`output_tokens`) and
+/// OpenAI/Codex (`prompt_tokens`/`completion_tokens`) shapes.
+fn add_usage_from_value(v: &serde_json::Value, acc: &mut ToolUsage) {
+    match v {
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::Object(u)) = map.get("usage") {
+                let get = |k: &str| u.get(k).and_then(|x| x.as_u64()).unwrap_or(0);
+                acc.input_tokens += get("input_tokens") + get("prompt_tokens");
+                acc.output_tokens += get("output_tokens") + get("completion_tokens");
+            }
+            for (_k, val) in map {
+                add_usage_from_value(val, acc);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for val in arr {
+                add_usage_from_value(val, acc);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[tauri::command(rename_all = "camelCase")]
 async fn git_status(state: State<'_, AppState>) -> Result<Vec<GitFileStatus>, String> {
     let root = require_root(&state)?;
@@ -773,6 +810,42 @@ fn set_settings(app: AppHandle, settings: serde_json::Value) -> Result<(), Strin
     })
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn read_usage_logs(app: AppHandle) -> Result<UsageSummary, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let mut summary = UsageSummary::default();
+    let sources = [
+        ("claude", home.join(".claude").join("projects")),
+        ("codex", home.join(".codex").join("sessions")),
+    ];
+    for (tool, dir) in sources {
+        if !dir.exists() {
+            continue;
+        }
+        let mut acc = ToolUsage::default();
+        for entry in WalkDir::new(&dir).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            if entry.path().extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(entry.path()) {
+                for line in content.lines() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                        add_usage_from_value(&v, &mut acc);
+                    }
+                }
+            }
+        }
+        summary.by_tool.insert(tool.to_string(), acc);
+    }
+    Ok(summary)
+}
+
 // --- Skills --------------------------------------------------------------
 // User-installed Anthropic-style "Agent Skills" (SKILL.md + folders).
 // Stored verbatim under <app_config_dir>/skills/<name>/ so the webview can
@@ -1209,6 +1282,7 @@ pub fn run() {
             run_command,
             get_settings,
             set_settings,
+            read_usage_logs,
             proxy_request,
             proxy_abort,
             skill_install,
@@ -1222,4 +1296,38 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::{add_usage_from_value, ToolUsage};
+
+    #[test]
+    fn extracts_nested_message_usage() {
+        let line = r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":5}}}"#;
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        let mut acc = ToolUsage::default();
+        add_usage_from_value(&v, &mut acc);
+        assert_eq!(acc.input_tokens, 10);
+        assert_eq!(acc.output_tokens, 5);
+    }
+
+    #[test]
+    fn supports_prompt_completion_aliases() {
+        let line = r#"{"usage":{"prompt_tokens":3,"completion_tokens":7}}"#;
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        let mut acc = ToolUsage::default();
+        add_usage_from_value(&v, &mut acc);
+        assert_eq!(acc.input_tokens, 3);
+        assert_eq!(acc.output_tokens, 7);
+    }
+
+    #[test]
+    fn ignores_objects_without_usage() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"foo":1,"bar":{"baz":2}}"#).unwrap();
+        let mut acc = ToolUsage::default();
+        add_usage_from_value(&v, &mut acc);
+        assert_eq!(acc.input_tokens, 0);
+        assert_eq!(acc.output_tokens, 0);
+    }
 }
