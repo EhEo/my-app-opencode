@@ -48,12 +48,72 @@ function resolveOpenTabKey(
   return null;
 }
 
+// Persisted split-pane sizes (px). Read once at mount; written on drag end.
+function readLayoutPx(key: string, fallback: number): number {
+  const raw = localStorage.getItem(`layout.${key}`);
+  const n = raw === null ? NaN : Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function clampPx(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v));
+}
+
 function App(): React.JSX.Element {
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [tabs, setTabs] = useState<Record<string, TabState>>({});
   const [activePath, setActivePath] = useState<string | null>(null);
   const [cursor, setCursor] = useState<CursorPosition | null>(null);
   const [wrapEnabled, setWrapEnabled] = useState(false);
+
+  // Resizable split sizes: file tree / chat panel widths, terminal height.
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
+    readLayoutPx("sidebarWidth", 260),
+  );
+  const [chatWidth, setChatWidth] = useState<number>(() =>
+    readLayoutPx("chatWidth", 380),
+  );
+  const [terminalHeight, setTerminalHeight] = useState<number>(() =>
+    readLayoutPx("terminalHeight", 120),
+  );
+
+  // Shared drag handler for the three pane splitters. Pointer capture routes
+  // all moves to the splitter itself, so Monaco/xterm underneath never steal
+  // the drag. `invert` flips the delta for panes anchored to the right/bottom.
+  const startSplitterDrag = useCallback(
+    (
+      e: React.PointerEvent<HTMLDivElement>,
+      opts: {
+        axis: "x" | "y";
+        start: number;
+        min: number;
+        max: number;
+        invert?: boolean;
+        key: string;
+        set: (n: number) => void;
+      },
+    ): void => {
+      e.preventDefault();
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+      const origin = opts.axis === "x" ? e.clientX : e.clientY;
+      let latest = opts.start;
+      const onMove = (ev: PointerEvent): void => {
+        const pos = opts.axis === "x" ? ev.clientX : ev.clientY;
+        const delta = (pos - origin) * (opts.invert === true ? -1 : 1);
+        latest = clampPx(opts.start + delta, opts.min, opts.max);
+        opts.set(latest);
+      };
+      const onUp = (): void => {
+        el.removeEventListener("pointermove", onMove);
+        el.removeEventListener("pointerup", onUp);
+        localStorage.setItem(`layout.${opts.key}`, String(Math.round(latest)));
+      };
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+    },
+    [],
+  );
 
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -437,7 +497,15 @@ function App(): React.JSX.Element {
   }, []);
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      style={
+        {
+          "--sidebar-width": `${sidebarWidth}px`,
+          "--chat-width": `${chatWidth}px`,
+        } as React.CSSProperties
+      }
+    >
       <Toolbar
         onOpenFolder={() => {
           void handleOpenFolder();
@@ -464,6 +532,19 @@ function App(): React.JSX.Element {
             }}
             gitStatuses={gitStatuses}
             refreshToken={fileTreeRefresh}
+          />
+          <div
+            className="splitter splitter--v"
+            onPointerDown={(e) =>
+              startSplitterDrag(e, {
+                axis: "x",
+                start: sidebarWidth,
+                min: 160,
+                max: 520,
+                key: "sidebarWidth",
+                set: setSidebarWidth,
+              })
+            }
           />
           <div className="editor-column">
             <Tabs
@@ -516,24 +597,59 @@ function App(): React.JSX.Element {
             />
           </div>
           {chatVisible ? (
-            <ChatPanel
-              workspaceRoot={rootPath}
-              settings={settings}
-              onOpenSettings={handleOpenSettings}
-              activeFilePath={activePath}
-              openFilePaths={openTabs.map((t) => t.path)}
-              onFileChanged={(p) => {
-                void handleFileChanged(p);
-                setFileTreeRefresh((n) => n + 1);
-              }}
-            />
+            <>
+              <div
+                className="splitter splitter--v"
+                onPointerDown={(e) =>
+                  startSplitterDrag(e, {
+                    axis: "x",
+                    start: chatWidth,
+                    min: 260,
+                    max: 720,
+                    invert: true,
+                    key: "chatWidth",
+                    set: setChatWidth,
+                  })
+                }
+              />
+              <ChatPanel
+                workspaceRoot={rootPath}
+                settings={settings}
+                onOpenSettings={handleOpenSettings}
+                activeFilePath={activePath}
+                openFilePaths={openTabs.map((t) => t.path)}
+                onFileChanged={(p) => {
+                  void handleFileChanged(p);
+                  setFileTreeRefresh((n) => n + 1);
+                }}
+              />
+            </>
           ) : null}
         </div>
+        {terminalVisible ? (
+          <div
+            className="splitter splitter--h"
+            onPointerDown={(e) =>
+              startSplitterDrag(e, {
+                axis: "y",
+                start: terminalHeight,
+                min: 80,
+                max: Math.round(window.innerHeight * 0.7),
+                invert: true,
+                key: "terminalHeight",
+                set: setTerminalHeight,
+              })
+            }
+          />
+        ) : null}
         {/* Kept mounted while hidden — unmounting would kill the shell session
             (and any process running in it). Toggle visibility via CSS instead. */}
         <div
           className="app__bottom"
-          style={{ display: terminalVisible ? undefined : "none" }}
+          style={{
+            display: terminalVisible ? undefined : "none",
+            height: terminalHeight,
+          }}
         >
           <TerminalPane cwd={rootPath} shell={terminalShell} />
         </div>

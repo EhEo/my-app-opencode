@@ -89,6 +89,31 @@ button {
   min-height: 0;
 }
 
+/* Pane splitters: 4px grab strip overlapping the panel borders (negative
+   margins keep the layout width/height unchanged). z-index lifts them above
+   Monaco/xterm so the pointer lands on the splitter, not the pane edge. */
+.splitter {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 20;
+  background-color: transparent;
+  transition: background-color 0.1s ease;
+}
+.splitter--v {
+  width: 4px;
+  margin: 0 -2px;
+  cursor: col-resize;
+}
+.splitter--h {
+  height: 4px;
+  margin: -2px 0;
+  cursor: row-resize;
+}
+.splitter:hover,
+.splitter:active {
+  background-color: var(--accent);
+}
+
 .app__main {
   display: flex;
   flex: 1 1 auto;
