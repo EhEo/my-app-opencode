@@ -250,27 +250,39 @@ Create `src/lib/__tests__/detectCli.test.ts`:
 ```ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const runExecMock = vi.fn();
-vi.mock("../agentExec", () => ({ runExec: (o: unknown) => runExecMock(o) }));
+// runExec is mocked as a PLAIN function (not a vi.fn): vitest 4 surfaces a
+// vi.fn whose implementation throws/rejects as a test failure even when the
+// code under test catches it. A plain function returning a rejected promise
+// that detectCli awaits+catches is fine. Calls are captured manually.
+type ExecResult = { code: number; stdout: string; stderr: string };
+let behavior: () => Promise<ExecResult>;
+const calls: unknown[] = [];
+
+vi.mock("../agentExec", () => ({
+  runExec: (o: unknown) => {
+    calls.push(o);
+    return behavior();
+  },
+}));
 
 import { detectCli } from "../workers";
 
-beforeEach(() => runExecMock.mockReset());
+beforeEach(() => {
+  calls.length = 0;
+});
 
 describe("detectCli", () => {
   it("is true when the probe exits 0", async () => {
-    runExecMock.mockResolvedValue({ code: 0, stdout: "v1.2.3", stderr: "" });
+    behavior = () => Promise.resolve({ code: 0, stdout: "v1.2.3", stderr: "" });
     expect(await detectCli("codex")).toBe(true);
-    expect(runExecMock).toHaveBeenCalledWith(
-      expect.objectContaining({ program: "codex", args: ["--version"], timeoutSec: 5 }),
-    );
+    expect(calls[0]).toMatchObject({ program: "codex", args: ["--version"], timeoutSec: 5 });
   });
   it("is false on non-zero exit", async () => {
-    runExecMock.mockResolvedValue({ code: 1, stdout: "", stderr: "nope" });
+    behavior = () => Promise.resolve({ code: 1, stdout: "", stderr: "nope" });
     expect(await detectCli("codex")).toBe(false);
   });
-  it("is false when runExec throws (not installed / timeout)", async () => {
-    runExecMock.mockRejectedValue(new Error("spawn error"));
+  it("is false when runExec rejects (not installed / timeout)", async () => {
+    behavior = () => Promise.reject(new Error("spawn error"));
     expect(await detectCli("nope")).toBe(false);
   });
 });
