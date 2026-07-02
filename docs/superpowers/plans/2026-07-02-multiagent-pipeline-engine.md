@@ -388,14 +388,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock @tauri-apps/api/core: Channel captures its onmessage; invoke("agent_exec_start")
 // drives the channel with scripted events, then resolves. invoke("agent_exec_kill") is a spy.
 const killSpy = vi.fn();
-let lastChannel: { onmessage?: (m: unknown) => void } | null = null;
 
 vi.mock("@tauri-apps/api/core", () => {
   class Channel {
     onmessage?: (m: unknown) => void;
-    constructor() {
-      lastChannel = this;
-    }
   }
   const invoke = vi.fn(async (cmd: string, args: Record<string, unknown>) => {
     if (cmd === "agent_exec_kill") {
@@ -418,7 +414,6 @@ import { runExec } from "../agentExec";
 
 beforeEach(() => {
   killSpy.mockClear();
-  lastChannel = null;
 });
 
 describe("runExec", () => {
