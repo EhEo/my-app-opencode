@@ -2022,3 +2022,10 @@ button {
 .pipeline-stage--done .pipeline-stage__status { color: var(--info, #7cb342); }
 .pipeline-stage__output { margin: 0; padding: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto; border-top: 1px solid var(--border-subtle); }
 
+.chat-panel__mode { display: inline-flex; gap: 2px; margin-left: auto; }
+.chat-panel__mode-btn {
+  background: transparent; border: 1px solid var(--border-strong); color: var(--text-muted);
+  font-size: 11px; padding: 2px 8px; cursor: pointer; border-radius: 3px;
+}
+.chat-panel__mode-btn--active { background: var(--bg-active-soft); color: var(--text-strong); }
+
