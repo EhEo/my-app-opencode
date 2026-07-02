@@ -12,6 +12,8 @@ import {
   type ProviderPreset,
   type ProviderStore,
   type Settings,
+  type WorkerBackend,
+  type StageConfig,
 } from "../lib/settings";
 import {
   applyConfig as applyMcpConfig,
@@ -19,6 +21,7 @@ import {
   subscribe as subscribeMcp,
   type McpServerStatus,
 } from "../lib/mcp";
+import { DEFAULT_STAGES, detectCli } from "../lib/workers";
 import {
   installSkill as installSkillBackend,
   loadAllInstalledSkills,
@@ -51,7 +54,7 @@ export function SettingsModal({
   const [customModelsDraft, setCustomModelsDraft] = useState<string>("");
   const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
   const [activeTab, setActiveTab] = useState<
-    "ai" | "mcp" | "skills" | "terminal"
+    "ai" | "mcp" | "skills" | "terminal" | "agents"
   >("ai");
 const [skillsInstalled, setSkillsInstalled] = useState<InstalledSkill[]>([]);
 
@@ -341,6 +344,15 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
           >
             터미널
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "agents"}
+            className={`settings-modal__tab${activeTab === "agents" ? " settings-modal__tab--active" : ""}`}
+            onClick={() => setActiveTab("agents")}
+          >
+            Agents
+          </button>
         </div>
 
         {activeTab === "ai" ? (
@@ -570,6 +582,10 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
           <TerminalSection store={store} setStore={setStore} />
         ) : null}
 
+        {activeTab === "agents" ? (
+          <AgentsSection store={store} setStore={setStore} />
+        ) : null}
+
         <div className="settings-modal__footer">
           <button
             type="button"
@@ -753,6 +769,183 @@ function McpSection({ store, setStore, statuses }: McpSectionProps): React.JSX.E
         >
           추가
         </button>
+      </div>
+    </div>
+  );
+}
+
+interface AgentsSectionProps {
+  store: ProviderStore;
+  setStore: React.Dispatch<React.SetStateAction<ProviderStore>>;
+}
+
+function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Element {
+  const [newId, setNewId] = useState("");
+  const [newCmd, setNewCmd] = useState("");
+  const [detected, setDetected] = useState<Record<string, boolean>>({});
+
+  const workers = store.workers ?? {};
+  const stages: StageConfig[] = store.pipeline?.stages ?? DEFAULT_STAGES;
+  const guard = store.usageGuard ?? { enabled: false, warnRatio: 0.8 };
+
+  const addCliWorker = (): void => {
+    const id = newId.trim();
+    const command = newCmd.trim();
+    if (id === "" || command === "" || workers[id] !== undefined) return;
+    const backend: WorkerBackend = {
+      kind: "cli",
+      command,
+      argsTemplate: ["exec", "@brief"],
+      briefMode: "arg",
+      timeoutSec: 300,
+      resultParse: "raw",
+    };
+    setStore((s) => ({ ...s, workers: { ...(s.workers ?? {}), [id]: backend } }));
+    setNewId("");
+    setNewCmd("");
+  };
+
+  const removeWorker = (id: string): void => {
+    setStore((s) => {
+      const next = { ...(s.workers ?? {}) };
+      delete next[id];
+      return { ...s, workers: next };
+    });
+  };
+
+  const setStageBackend = (stageId: string, backendId: string): void => {
+    const nextStages = stages.map((st) =>
+      st.id === stageId ? { ...st, backendId: backendId === "" ? undefined : backendId } : st,
+    );
+    setStore((s) => ({ ...s, pipeline: { stages: nextStages } }));
+  };
+
+  const patchGuard = (patch: Partial<NonNullable<ProviderStore["usageGuard"]>>): void => {
+    setStore((s) => ({ ...s, usageGuard: { ...guard, ...patch } }));
+  };
+
+  const runDetect = async (id: string, command: string): Promise<void> => {
+    const ok = await detectCli(command);
+    setDetected((d) => ({ ...d, [id]: ok }));
+  };
+
+  const workerIds = Object.keys(workers);
+
+  return (
+    <div className="settings-modal__mcp">
+      <h3 className="settings-modal__section-title">CLI 워커</h3>
+      <p className="settings-modal__hint">
+        외부 CLI 에이전트(claude/codex/gemini 등)를 등록하면 파이프라인 단계에서 인앱 AI 대신
+        선택할 수 있습니다. args의 <code>@brief</code>는 단계 브리프로 치환됩니다.
+      </p>
+      <ul className="settings-modal__mcp-list">
+        {workerIds.map((id) => {
+          const w = workers[id];
+          if (w.kind !== "cli") return null;
+          return (
+            <li key={id} className="settings-modal__mcp-item">
+              <div className="settings-modal__mcp-row1">
+                <span className="settings-modal__mcp-name">{id}</span>
+                <code className="settings-modal__mcp-url">
+                  {w.command} {w.argsTemplate.join(" ")}
+                </code>
+                <button
+                  type="button"
+                  className="settings-modal__btn settings-modal__btn--small"
+                  onClick={() => void runDetect(id, w.command)}
+                >
+                  탐지
+                </button>
+                {detected[id] !== undefined ? (
+                  <span>{detected[id] ? "✓ 사용가능" : "✗ 없음"}</span>
+                ) : null}
+                <button
+                  type="button"
+                  className="settings-modal__btn settings-modal__btn--small settings-modal__btn--danger"
+                  onClick={() => removeWorker(id)}
+                >
+                  제거
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="settings-modal__mcp-add">
+        <input
+          className="settings-modal__input"
+          placeholder="워커 id (예: codex)"
+          value={newId}
+          onChange={(e) => setNewId(e.target.value)}
+        />
+        <input
+          className="settings-modal__input"
+          placeholder="명령 (예: codex)"
+          value={newCmd}
+          onChange={(e) => setNewCmd(e.target.value)}
+        />
+        <button
+          type="button"
+          className="settings-modal__btn settings-modal__btn--primary settings-modal__btn--small"
+          onClick={addCliWorker}
+          disabled={newId.trim() === "" || newCmd.trim() === ""}
+        >
+          추가
+        </button>
+      </div>
+
+      <h3 className="settings-modal__section-title">파이프라인 단계 기본 백엔드</h3>
+      {stages.map((st) => (
+        <div key={st.id} className="settings-modal__field">
+          <span className="settings-modal__label">{st.label}</span>
+          <select
+            className="settings-modal__input settings-modal__select"
+            value={st.backendId ?? ""}
+            onChange={(e) => setStageBackend(st.id, e.target.value)}
+          >
+            <option value="">기본 (인앱 AI)</option>
+            {workerIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </div>
+      ))}
+
+      <h3 className="settings-modal__section-title">사용량 가드</h3>
+      <label className="settings-modal__mcp-toggle">
+        <input
+          type="checkbox"
+          checked={guard.enabled}
+          onChange={(e) => patchGuard({ enabled: e.target.checked })}
+        />
+        <span>실행당 예산 경고 사용</span>
+      </label>
+      <div className="settings-modal__field">
+        <span className="settings-modal__label">실행당 예산 (토큰, 비우면 무제한)</span>
+        <input
+          type="number"
+          className="settings-modal__input"
+          value={guard.perRunBudgetTokens ?? ""}
+          onChange={(e) =>
+            patchGuard({
+              perRunBudgetTokens: e.target.value === "" ? undefined : Number(e.target.value),
+            })
+          }
+        />
+      </div>
+      <div className="settings-modal__field">
+        <span className="settings-modal__label">경고 임계 비율 (0–1)</span>
+        <input
+          type="number"
+          step="0.05"
+          min="0"
+          max="1"
+          className="settings-modal__input"
+          value={guard.warnRatio}
+          onChange={(e) => patchGuard({ warnRatio: Number(e.target.value) })}
+        />
       </div>
     </div>
   );

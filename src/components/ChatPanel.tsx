@@ -15,6 +15,7 @@ import {
 } from "../lib/agent";
 import type { Settings } from "../lib/settings";
 import { getFileName } from "../lib/language";
+import { PipelinePanel } from "./PipelinePanel";
 
 interface ChatPanelProps {
   workspaceRoot: string | null;
@@ -97,6 +98,7 @@ export function ChatPanel({
   const [uiItems, setUiItems] = useState<UiItem[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
+  const [mode, setMode] = useState<"chat" | "pipeline">("chat");
 
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -369,6 +371,22 @@ export function ChatPanel({
     <aside className="chat-panel">
       <header className="chat-panel__header">
         <span className="chat-panel__title">opencode</span>
+        <div className="chat-panel__mode" role="tablist">
+          <button
+            type="button"
+            className={`chat-panel__mode-btn${mode === "chat" ? " chat-panel__mode-btn--active" : ""}`}
+            onClick={() => setMode("chat")}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            className={`chat-panel__mode-btn${mode === "pipeline" ? " chat-panel__mode-btn--active" : ""}`}
+            onClick={() => setMode("pipeline")}
+          >
+            Pipeline
+          </button>
+        </div>
         <span
           className={`chat-panel__status${
             running ? " chat-panel__status--running" : ""
@@ -378,92 +396,98 @@ export function ChatPanel({
         </span>
       </header>
 
-      <div
-        ref={scrollContainerRef}
-        className="chat-messages"
-        onScroll={handleScroll}
-      >
-        {isEmpty ? (
-          <EmptyState
-            onExample={handleExample}
-            showExamples={workspaceRoot !== null && settings !== null}
-          />
-        ) : (
-          <MessageList items={uiItems} onToggleTool={toggleToolCard} />
-        )}
-        <div ref={messagesEndRef} className="chat-messages__end" />
-      </div>
-
-      <footer className="chat-input">
-        {disabledReason === "settings" ? (
-          <div className="chat-input__hint">
-            <span>Configure settings to start.</span>
-            <button
-              type="button"
-              className="chat-input__hint-btn"
-              onClick={onOpenSettings}
-            >
-              Open settings
-            </button>
-          </div>
-        ) : disabledReason === "workspace" ? (
-          <div className="chat-input__hint">
-            <span>Open a folder to start.</span>
-          </div>
-        ) : null}
-        <div className="chat-input__row">
-          <textarea
-            ref={textareaRef}
-            className="chat-input__field"
-            placeholder={
-              workspaceRoot === null
-                ? "Open a folder first…"
-                : settings === null
-                  ? "Configure settings first…"
-                  : "Ask opencode to read, edit, or run code…"
-            }
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={2}
-            spellCheck={false}
-          />
-        </div>
-        <div className="chat-input__actions">
-          <div className="chat-input__meta">
-            {workspaceRoot !== null ? (
-              <span className="chat-input__meta-item" title={workspaceRoot}>
-                {getFileName(workspaceRoot)}
-              </span>
-            ) : null}
-            {settings !== null ? (
-              <span className="chat-input__meta-item">{settings.model}</span>
-            ) : null}
-          </div>
-          <div className="chat-input__buttons">
-            {running ? (
-              <button
-                type="button"
-                className="chat-input__btn chat-input__btn--stop"
-                onClick={handleStop}
-              >
-                Stop
-              </button>
+      {mode === "pipeline" ? (
+        <PipelinePanel workspaceRoot={workspaceRoot} />
+      ) : (
+        <>
+          <div
+            ref={scrollContainerRef}
+            className="chat-messages"
+            onScroll={handleScroll}
+          >
+            {isEmpty ? (
+              <EmptyState
+                onExample={handleExample}
+                showExamples={workspaceRoot !== null && settings !== null}
+              />
             ) : (
-              <button
-                type="button"
-                className="chat-input__btn chat-input__btn--send"
-                onClick={() => {
-                  void handleSend();
-                }}
-                disabled={!canSend}
-              >
-                Send
-              </button>
+              <MessageList items={uiItems} onToggleTool={toggleToolCard} />
             )}
+            <div ref={messagesEndRef} className="chat-messages__end" />
           </div>
-        </div>
-      </footer>
+
+          <footer className="chat-input">
+            {disabledReason === "settings" ? (
+              <div className="chat-input__hint">
+                <span>Configure settings to start.</span>
+                <button
+                  type="button"
+                  className="chat-input__hint-btn"
+                  onClick={onOpenSettings}
+                >
+                  Open settings
+                </button>
+              </div>
+            ) : disabledReason === "workspace" ? (
+              <div className="chat-input__hint">
+                <span>Open a folder to start.</span>
+              </div>
+            ) : null}
+            <div className="chat-input__row">
+              <textarea
+                ref={textareaRef}
+                className="chat-input__field"
+                placeholder={
+                  workspaceRoot === null
+                    ? "Open a folder first…"
+                    : settings === null
+                      ? "Configure settings first…"
+                      : "Ask opencode to read, edit, or run code…"
+                }
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={2}
+                spellCheck={false}
+              />
+            </div>
+            <div className="chat-input__actions">
+              <div className="chat-input__meta">
+                {workspaceRoot !== null ? (
+                  <span className="chat-input__meta-item" title={workspaceRoot}>
+                    {getFileName(workspaceRoot)}
+                  </span>
+                ) : null}
+                {settings !== null ? (
+                  <span className="chat-input__meta-item">{settings.model}</span>
+                ) : null}
+              </div>
+              <div className="chat-input__buttons">
+                {running ? (
+                  <button
+                    type="button"
+                    className="chat-input__btn chat-input__btn--stop"
+                    onClick={handleStop}
+                  >
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="chat-input__btn chat-input__btn--send"
+                    onClick={() => {
+                      void handleSend();
+                    }}
+                    disabled={!canSend}
+                  >
+                    Send
+                  </button>
+                )}
+              </div>
+            </div>
+          </footer>
+        </>
+      )}
     </aside>
   );
 }

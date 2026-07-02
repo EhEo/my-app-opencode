@@ -95,6 +95,12 @@ export interface ProviderStore {
   terminalShell?: string;
   workers?: Record<string, WorkerBackend>;
   pipeline?: { stages: StageConfig[] };
+  usageGuard?: {
+    enabled: boolean;
+    perRunBudgetTokens?: number;
+    warnRatio: number;
+    providers?: string[];
+  };
 }
 
 // Shell presets offered in Settings. `command` is passed to the backend; an
