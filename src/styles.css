@@ -2058,3 +2058,5 @@ button {
 
 .editor-pane__preview-toggle { position: absolute; top: 8px; right: 16px; z-index: 3; height: 22px; padding: 0 8px; font-size: 11px; }
 .editor-pane__preview { position: absolute; inset: 0; z-index: 2; overflow: auto; padding: 16px 24px; background: var(--bg-editor); }
+
+.editor-column__viewer { position: absolute; inset: 0; z-index: 4; background: var(--bg-editor); }
