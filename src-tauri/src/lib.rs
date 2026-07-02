@@ -257,6 +257,13 @@ struct UsageSummary {
 /// Tolerant of both Claude (`input_tokens`/`output_tokens`) and
 /// OpenAI/Codex (`prompt_tokens`/`completion_tokens`) shapes.
 fn add_usage_from_value(v: &serde_json::Value, acc: &mut ToolUsage) {
+    add_usage_from_value_depth(v, acc, 0);
+}
+
+fn add_usage_from_value_depth(v: &serde_json::Value, acc: &mut ToolUsage, depth: u32) {
+    if depth > 100 {
+        return;
+    }
     match v {
         serde_json::Value::Object(map) => {
             if let Some(serde_json::Value::Object(u)) = map.get("usage") {
@@ -265,12 +272,12 @@ fn add_usage_from_value(v: &serde_json::Value, acc: &mut ToolUsage) {
                 acc.output_tokens += get("output_tokens") + get("completion_tokens");
             }
             for (_k, val) in map {
-                add_usage_from_value(val, acc);
+                add_usage_from_value_depth(val, acc, depth + 1);
             }
         }
         serde_json::Value::Array(arr) => {
             for val in arr {
-                add_usage_from_value(val, acc);
+                add_usage_from_value_depth(val, acc, depth + 1);
             }
         }
         _ => {}
@@ -1129,11 +1136,24 @@ enum ExecEvent {
     Exit { code: i32 },
 }
 
-// id -> child PID, for cancellation from agent_exec_kill.
-type ExecMap = Mutex<HashMap<String, u32>>;
+// id -> live child handle, for cancellation from agent_exec_kill. Holding the
+// Child (not a bare PID) keeps the PID reserved until we reap, so a tree-kill
+// can never hit a recycled PID.
+type ExecMap = Mutex<HashMap<String, Arc<Mutex<std::process::Child>>>>;
 static EXECS: std::sync::OnceLock<ExecMap> = std::sync::OnceLock::new();
 fn execs() -> &'static ExecMap {
     EXECS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// Removes an exec's registry entry when the exec task's scope ends — including
+// on panic in the on_event callback — so dead entries can't accumulate.
+struct ExecGuard(String);
+impl Drop for ExecGuard {
+    fn drop(&mut self) {
+        if let Ok(mut g) = execs().lock() {
+            g.remove(&self.0);
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -1149,8 +1169,10 @@ fn kill_pid_tree(pid: u32) {
 }
 
 /// Spawn `program args`, stream stdout/stderr as `ExecEvent`s to `on_event`,
-/// report the spawned PID via `on_spawn`, and emit a final `Exit` event.
-/// Synchronous: returns after the child exits and both pipes drain.
+/// hand the live child handle to `on_spawn` (for cancellation), and emit a
+/// final `Exit` event. Synchronous: returns after the child exits and both
+/// pipes drain. No built-in timeout by design — long-running agents stream
+/// until they finish or the caller cancels via agent_exec_kill.
 fn exec_stream<S, E>(
     program: &str,
     args: &[String],
@@ -1161,7 +1183,7 @@ fn exec_stream<S, E>(
     mut on_event: E,
 ) -> Result<(), String>
 where
-    S: FnOnce(u32),
+    S: FnOnce(Arc<Mutex<std::process::Child>>),
     E: FnMut(ExecEvent),
 {
     let mut builder = Command::new(program);
@@ -1179,21 +1201,23 @@ where
     no_window(&mut builder);
 
     let mut child = builder.spawn().map_err(|e| e.to_string())?;
-    on_spawn(child.id());
 
     if let Some(data) = stdin {
         if let Some(mut si) = child.stdin.take() {
             use std::io::Write;
             let _ = si.write_all(data.as_bytes());
-        } // si dropped here -> stdin closed
+        }
     } else {
-        child.stdin.take(); // close stdin so the child doesn't block on read
+        child.stdin.take();
     }
 
     let mut out = child.stdout.take().expect("stdout piped");
     let mut err = child.stderr.take().expect("stderr piped");
-    let (tx, rx) = mpsc::channel::<ExecEvent>();
 
+    let child = Arc::new(Mutex::new(child));
+    on_spawn(child.clone());
+
+    let (tx, rx) = mpsc::channel::<ExecEvent>();
     let tx_out = tx.clone();
     let h_out = thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -1222,7 +1246,7 @@ where
             }
         }
     });
-    drop(tx); // only the two reader threads hold senders now
+    drop(tx);
 
     for ev in rx {
         on_event(ev);
@@ -1230,11 +1254,25 @@ where
     let _ = h_out.join();
     let _ = h_err.join();
 
-    let code = child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
+    let code = {
+        if let Ok(mut g) = child.lock() {
+            g.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1)
+        } else {
+            -1
+        }
+    };
     on_event(ExecEvent::Exit { code });
     Ok(())
 }
 
+/// Spawn an arbitrary CLI program and stream its output to the webview.
+///
+/// SECURITY: unlike run_command / the fs commands, this intentionally does NOT
+/// confine `program`/`cwd` to the workspace root (no validate_path). It is a
+/// deliberately unsandboxed exec surface for launching agent CLIs, reachable
+/// only from the app's own trusted webview. Callers must treat `program`/`args`
+/// as trusted. There is no built-in timeout; the caller cancels via
+/// agent_exec_kill.
 #[tauri::command(rename_all = "camelCase")]
 async fn agent_exec_start(
     id: String,
@@ -1247,25 +1285,30 @@ async fn agent_exec_start(
 ) -> Result<(), String> {
     let id_spawn = id.clone();
     tokio::task::spawn_blocking(move || {
-        let result = exec_stream(
+        {
+            let g = execs().lock().map_err(|e| e.to_string())?;
+            if g.contains_key(&id) {
+                return Err(format!("exec id already running: {id}"));
+            }
+        }
+        // Armed only after the dup-id check passes, so a rejected duplicate
+        // never removes the in-flight exec's entry.
+        let _guard = ExecGuard(id.clone());
+        exec_stream(
             &program,
             &args,
             cwd,
             stdin,
             env.unwrap_or_default(),
-            |pid| {
+            |child| {
                 if let Ok(mut g) = execs().lock() {
-                    g.insert(id_spawn.clone(), pid);
+                    g.insert(id_spawn.clone(), child);
                 }
             },
             |ev| {
                 let _ = on_event.send(ev);
             },
-        );
-        if let Ok(mut g) = execs().lock() {
-            g.remove(&id);
-        }
-        result
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1273,12 +1316,26 @@ async fn agent_exec_start(
 
 #[tauri::command(rename_all = "camelCase")]
 fn agent_exec_kill(id: String) -> Result<(), String> {
-    let pid = {
+    let handle = {
         let g = execs().lock().map_err(|e| e.to_string())?;
-        g.get(&id).copied()
+        g.get(&id).cloned()
     };
-    if let Some(pid) = pid {
-        kill_pid_tree(pid);
+    if let Some(child) = handle {
+        if let Ok(mut g) = child.lock() {
+            // Hold the lock across the whole kill so exec_stream cannot reap
+            // (and free the PID) underneath us. Only tree-kill if the child is
+            // still running; if it already exited, its PID may be recycled and
+            // must not be targeted.
+            match g.try_wait() {
+                Ok(Some(_)) => {}
+                _ => {
+                    let pid = g.id();
+                    kill_pid_tree(pid);
+                    let _ = g.kill();
+                    let _ = g.wait();
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -1509,7 +1566,7 @@ mod exec_tests {
             ("sh", vec!["-c".into(), "echo hello".into()])
         };
         let mut events: Vec<ExecEvent> = Vec::new();
-        exec_stream(program, &args, None, None, HashMap::new(), |_pid| {}, |e| events.push(e))
+        exec_stream(program, &args, None, None, HashMap::new(), |_child| {}, |e| events.push(e))
             .unwrap();
 
         let stdout: Vec<u8> = events
