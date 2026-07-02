@@ -27,6 +27,15 @@ export function PptxViewer({ path }: { path: string }): React.JSX.Element {
         const { base64 } = await fs.readFileBytes(path);
         const bytes = base64ToUint8Array(base64);
         const { PPTXViewer } = await import("pptxviewjs");
+        // pptxviewjs's bundled JSZip resolver checks window/globalThis first;
+        // its require('jszip') path is undefined under Vite ESM and its CDN
+        // fallback is unreachable in the Tauri WebView. Expose the bundled
+        // jszip on globalThis so PPTX (ZIP) parsing works offline.
+        const g = globalThis as { JSZip?: unknown };
+        if (g.JSZip === undefined) {
+          const jszip = await import("jszip");
+          g.JSZip = jszip.default ?? jszip;
+        }
         if (cancelled) return;
         viewer = new PPTXViewer({ canvas, slideSizeMode: "fit" });
         await viewer.loadFile(bytes);
