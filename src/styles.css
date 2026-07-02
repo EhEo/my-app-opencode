@@ -488,7 +488,9 @@ button {
   border-bottom: 1px solid var(--border-strong);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  /* NOTE: no `scrollbar-width` here — in Chromium/WebView2 setting it makes the
+     ::-webkit-scrollbar sizing below be ignored (falls back to the thicker
+     native thin bar). Omitting it lets our 3px webkit rule take effect. */
   user-select: none;
 }
 
