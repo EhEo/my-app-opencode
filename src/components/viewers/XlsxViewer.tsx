@@ -19,7 +19,7 @@ export function XlsxViewer({ path }: { path: string }): React.JSX.Element {
       try {
         const { base64 } = await fs.readFileBytes(path);
         const { parseXlsx } = await import("../../lib/xlsxData");
-        const data = parseXlsx(base64ToUint8Array(base64));
+        const data = await parseXlsx(base64ToUint8Array(base64));
         const mod = await import("x-data-spreadsheet");
         await import("x-data-spreadsheet/dist/xspreadsheet.css");
         if (cancelled) return;

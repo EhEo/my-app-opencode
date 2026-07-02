@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as XLSX from "xlsx";
-import { workbookToXSpreadsheet } from "../xlsxData";
+import { workbookToXSpreadsheet, excelStyleToXStyle } from "../xlsxData";
 
 describe("workbookToXSpreadsheet", () => {
   it("maps cells to x-spreadsheet rows with display text", () => {
@@ -49,5 +49,45 @@ describe("workbookToXSpreadsheet", () => {
     expect(s.cols?.[0]).toEqual({ width: 120 });
     expect(s.cols?.[2]).toEqual({ width: 75 }); // wch 10 → 10*7+5
     expect(s.rows[0].height).toBe(40);
+  });
+});
+
+describe("excelStyleToXStyle", () => {
+  it("maps solid fill, font color and emphasis", () => {
+    const xs = excelStyleToXStyle({
+      fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } },
+      font: { bold: true, size: 12, color: { argb: "FF9C0006" }, underline: "single" },
+    });
+    expect(xs).toEqual({
+      bgcolor: "#FFF2CC",
+      color: "#9C0006",
+      font: { size: 12, bold: true },
+      underline: true,
+    });
+  });
+
+  it("maps alignment, wrap and borders", () => {
+    const xs = excelStyleToXStyle({
+      alignment: { horizontal: "center", vertical: "middle", wrapText: true },
+      border: {
+        top: { style: "thin", color: { argb: "FF0366D6" } },
+        bottom: { style: "double" },
+      },
+    });
+    expect(xs).toEqual({
+      align: "center",
+      valign: "middle",
+      textwrap: true,
+      border: {
+        top: ["thin", "#0366D6"],
+        bottom: ["medium", "#000000"],
+      },
+    });
+  });
+
+  it("returns null for an empty style and skips theme-only colors", () => {
+    expect(excelStyleToXStyle({})).toBeNull();
+    // theme-indexed color without argb → nothing renderable
+    expect(excelStyleToXStyle({ font: { color: {} } })).toBeNull();
   });
 });
