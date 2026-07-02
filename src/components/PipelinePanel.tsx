@@ -44,6 +44,7 @@ export function PipelinePanel({
 }): React.JSX.Element {
   const [store, setStore] = useState<ProviderStore | null>(null);
   const [input, setInput] = useState("");
+  const [submittedRequest, setSubmittedRequest] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [stages, setStages] = useState<StageView[]>(() => initialStages(null));
   const [snapshot, setSnapshot] = useState<UsageSnapshot | null>(null);
@@ -104,10 +105,15 @@ export function PipelinePanel({
 
   const handleRun = useCallback(async (): Promise<void> => {
     if (store === null || running || input.trim() === "") return;
+    const trimmed = input.trim();
     const guardEnabled = store.usageGuard?.enabled === true;
     const budget = store.usageGuard?.perRunBudgetTokens;
     const warn = store.usageGuard?.warnRatio ?? 0.8;
 
+    // Move the request out of the input (like the chat's Send) so the box is
+    // clear for the next request, and surface what's running above the stages.
+    setSubmittedRequest(trimmed);
+    setInput("");
     sessionRef.current = new SessionUsage();
     sessionTokensRef.current = 0;
     setSnapshot(null);
@@ -131,7 +137,7 @@ export function PipelinePanel({
 
     try {
       await runPipeline({
-        request: input.trim() + openCtx,
+        request: trimmed + openCtx,
         stages: stageConfigs,
         workers: store.workers,
         deps: makePipelineDeps(store),
@@ -201,6 +207,13 @@ export function PipelinePanel({
   return (
     <div className="pipeline-panel">
       <UsageStrip snapshot={snapshot} />
+
+      {submittedRequest !== null ? (
+        <div className="pipeline-panel__request">
+          <span className="pipeline-panel__request-label">요청</span>
+          <span className="pipeline-panel__request-text">{submittedRequest}</span>
+        </div>
+      ) : null}
 
       <div className="pipeline-panel__stages">
         {stages.map((s) => (
