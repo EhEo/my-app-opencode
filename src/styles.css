@@ -2062,6 +2062,11 @@ button {
 .doc-viewer__xlsx-host { width: 100%; height: 100%; }
 .doc-viewer__xlsx-host .x-spreadsheet { height: 100%; }
 
+.doc-viewer__pptx { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--bg-editor); overflow: hidden; }
+.doc-viewer__pptx-stage { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 12px; background: #2a2a2a; }
+.doc-viewer__pptx-canvas { max-width: 100%; max-height: 100%; background: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4); }
+.doc-viewer__pptx-nav { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+
 .editor-pane__preview-toggle {
   position: absolute;
   /* bottom-right corner — clears the top of the minimap so file content isn't covered */
