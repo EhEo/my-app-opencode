@@ -17,6 +17,9 @@
 # 런타임 캐시 — 로컬 경로·UUID 포함, git 추적 안 함
 cache/
 
+# superpowers 작업 진행 원장 — 스크래치, git 추적 안 함
+.superpowers/
+
 # Node / Vite 빌드 산출물
 node_modules/
 dist/
