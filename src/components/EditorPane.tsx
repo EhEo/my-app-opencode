@@ -2,6 +2,7 @@ import Editor, { OnChange, OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as monacoTypes from "monaco-editor";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { getLanguageId } from "../lib/language";
 import { ensureLanguageRegistered, monaco } from "../lib/monaco";
 import { openExternalUrl } from "./viewers/openExternally";
@@ -287,6 +288,7 @@ export function EditorPane({
         <div className="editor-pane__preview">
           <div className="chat-md">
             <Markdown
+              remarkPlugins={[remarkGfm]}
               components={{
                 a: ({ href, children }) => (
                   <a

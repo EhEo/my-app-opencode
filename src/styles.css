@@ -1015,6 +1015,29 @@ button {
   border-bottom: 1px dotted #4ea1ff;
 }
 
+.chat-md table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.chat-md th,
+.chat-md td {
+  border: 1px solid var(--border-strong);
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.chat-md th {
+  background-color: rgba(255, 255, 255, 0.05);
+  font-weight: 600;
+}
+
 .chat-md__a:hover {
   color: #7ab8ff;
   border-bottom-color: #7ab8ff;
