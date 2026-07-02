@@ -388,14 +388,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock @tauri-apps/api/core: Channel captures its onmessage; invoke("agent_exec_start")
 // drives the channel with scripted events, then resolves. invoke("agent_exec_kill") is a spy.
 const killSpy = vi.fn();
-let lastChannel: { onmessage?: (m: unknown) => void } | null = null;
 
 vi.mock("@tauri-apps/api/core", () => {
   class Channel {
     onmessage?: (m: unknown) => void;
-    constructor() {
-      lastChannel = this;
-    }
   }
   const invoke = vi.fn(async (cmd: string, args: Record<string, unknown>) => {
     if (cmd === "agent_exec_kill") {
@@ -418,7 +414,6 @@ import { runExec } from "../agentExec";
 
 beforeEach(() => {
   killSpy.mockClear();
-  lastChannel = null;
 });
 
 describe("runExec", () => {
@@ -482,7 +477,10 @@ export interface ExecOptions {
 
 export async function runExec(opts: ExecOptions): Promise<ExecResult> {
   const id = crypto.randomUUID();
-  const decoder = new TextDecoder();
+  // Separate decoders: a streaming TextDecoder keeps partial multi-byte state,
+  // so stdout and stderr must not share one (interleaved chunks would corrupt).
+  const outDecoder = new TextDecoder();
+  const errDecoder = new TextDecoder();
   let stdout = "";
   let stderr = "";
 
@@ -495,7 +493,7 @@ export async function runExec(opts: ExecOptions): Promise<ExecResult> {
       if (opts.signal !== undefined) opts.signal.removeEventListener("abort", onAbort);
     };
     const kill = (): void => {
-      void invoke("agent_exec_kill", { id });
+      void invoke("agent_exec_kill", { id }).catch(() => {});
     };
     const fail = (message: string): void => {
       if (settled) return;
@@ -522,11 +520,11 @@ export async function runExec(opts: ExecOptions): Promise<ExecResult> {
     channel.onmessage = (msg: ExecEvent): void => {
       if (settled) return;
       if (msg.type === "stdout") {
-        const chunk = decoder.decode(new Uint8Array(msg.data), { stream: true });
+        const chunk = outDecoder.decode(new Uint8Array(msg.data), { stream: true });
         stdout += chunk;
         opts.onStdout?.(chunk);
       } else if (msg.type === "stderr") {
-        const chunk = decoder.decode(new Uint8Array(msg.data), { stream: true });
+        const chunk = errDecoder.decode(new Uint8Array(msg.data), { stream: true });
         stderr += chunk;
         opts.onStderr?.(chunk);
       } else if (msg.type === "exit") {

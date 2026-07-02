@@ -65,6 +65,26 @@ export interface McpServerEntry {
   enabled: boolean;
 }
 
+export type WorkerBackend =
+  | { kind: "inapp"; providerId: string; model?: string; systemPrompt?: string }
+  | {
+      kind: "cli";
+      command: string;
+      argsTemplate: string[];
+      briefMode: "stdin" | "arg";
+      cwd?: string;
+      timeoutSec?: number;
+      resultParse?: "raw" | "json";
+    }
+  | { kind: "mcp"; server: string; tool: string };
+
+export interface StageConfig {
+  id: "plan" | "code" | "review";
+  label: string;
+  backendId?: string;
+  enabled: boolean;
+}
+
 export interface ProviderStore {
   activeProviderId: string;
   activeModel: string;
@@ -73,6 +93,8 @@ export interface ProviderStore {
   skills?: Record<string, { enabled: boolean }>;
   /** Terminal shell command/path. Empty or undefined = platform default. */
   terminalShell?: string;
+  workers?: Record<string, WorkerBackend>;
+  pipeline?: { stages: StageConfig[] };
 }
 
 // Shell presets offered in Settings. `command` is passed to the backend; an
