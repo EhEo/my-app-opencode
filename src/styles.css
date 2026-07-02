@@ -2173,5 +2173,8 @@ button {
 /* Preview text matches the editor's 14px (root is 13px, which read smaller). */
 .editor-pane__preview .chat-md { font-size: 14px; line-height: 1.65; }
 .editor-pane__preview .chat-md table { font-size: 14px; }
+/* HTML preview: full-bleed browser-like iframe (no app padding). */
+.editor-pane__preview--html { padding: 0; overflow: hidden; }
+.editor-pane__preview-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 
 .editor-column__viewer { position: absolute; inset: 0; z-index: 4; background: var(--bg-editor); }

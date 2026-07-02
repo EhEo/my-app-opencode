@@ -81,10 +81,12 @@ export function EditorPane({
   const [mounted, setMounted] = useState(false);
   const [preview, setPreview] = useState(false);
   const isMarkdown = file !== null && /\.(md|markdown)$/i.test(file.path);
+  const isHtml = file !== null && /\.(html?|xhtml)$/i.test(file.path);
+  const previewable = isMarkdown || isHtml;
 
   useEffect(() => {
-    if (!isMarkdown) setPreview(false);
-  }, [isMarkdown]);
+    if (!previewable) setPreview(false);
+  }, [previewable]);
 
   // Markdown preview links: bare <a> would navigate the whole webview away
   // from the app (no back button). Intercept — open web URLs in the OS
@@ -270,7 +272,7 @@ export function EditorPane({
           padding: { top: 8, bottom: 8 },
         }}
       />
-      {isMarkdown ? (
+      {previewable ? (
         <button
           type="button"
           className="editor-pane__preview-toggle toolbar__btn"
@@ -279,6 +281,19 @@ export function EditorPane({
         >
           {preview ? "편집" : "미리보기"}
         </button>
+      ) : null}
+      {isHtml && preview && file !== null ? (
+        <div className="editor-pane__preview editor-pane__preview--html">
+          {/* sandbox="" blocks scripts/forms/popups (untrusted local HTML);
+              remote CSS/images still load. Local relative resources are not
+              resolved in this first pass. */}
+          <iframe
+            className="editor-pane__preview-frame"
+            sandbox=""
+            srcDoc={file.content}
+            title="HTML 미리보기"
+          />
+        </div>
       ) : null}
       {isMarkdown && preview && file !== null ? (
         <div className="editor-pane__preview">
