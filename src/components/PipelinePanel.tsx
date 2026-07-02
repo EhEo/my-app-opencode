@@ -258,8 +258,8 @@ export function PipelinePanel({
         <div className="pipeline-panel__error">{runError}</div>
       ) : null}
 
-      <footer className="pipeline-panel__footer">
-        <div className="pipeline-panel__input-row">
+      <footer className="pipeline-panel__footer chat-input">
+        <div className="chat-input__row">
           <textarea
             className="chat-input__field"
             rows={2}
@@ -270,23 +270,31 @@ export function PipelinePanel({
             onChange={(e) => setInput(e.target.value)}
             spellCheck={false}
           />
-          {running ? (
-            <button type="button" className="chat-input__btn chat-input__btn--stop" onClick={handleStop}>
-              Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="chat-input__btn chat-input__btn--send"
-              onClick={() => void handleRun()}
-              disabled={!canRun}
-            >
-              Run
-            </button>
-          )}
         </div>
-        <div className="pipeline-panel__meta">
-          {stages.map((s) => `${s.label}: ${s.backendId ?? "인앱"}`).join("  ·  ")}
+        <div className="chat-input__actions">
+          <div className="chat-input__meta pipeline-panel__meta">
+            {stages.map((s) => (
+              <span key={s.id} className="chat-input__meta-item">
+                {s.label}: {s.backendId ?? "인앱"}
+              </span>
+            ))}
+          </div>
+          <div className="chat-input__buttons">
+            {running ? (
+              <button type="button" className="chat-input__btn chat-input__btn--stop" onClick={handleStop}>
+                Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="chat-input__btn chat-input__btn--send"
+                onClick={() => void handleRun()}
+                disabled={!canRun}
+              >
+                Run
+              </button>
+            )}
+          </div>
         </div>
       </footer>
     </div>
