@@ -4,6 +4,7 @@ import type * as monacoTypes from "monaco-editor";
 import Markdown from "react-markdown";
 import { getLanguageId } from "../lib/language";
 import { ensureLanguageRegistered, monaco } from "../lib/monaco";
+import { openExternalUrl } from "./viewers/openExternally";
 
 export interface EditorFile {
   path: string;
@@ -19,6 +20,7 @@ interface EditorPaneProps {
   file: EditorFile | null;
   onChange: (value: string) => void;
   onCursorChange?: (position: CursorPosition) => void;
+  onOpenPath?: (absPath: string) => void;
   wrapEnabled: boolean;
   jumpRequest?: { path: string; line: number; column: number } | null;
   jumpRequestNonce?: number;
@@ -40,10 +42,34 @@ function buildModelUri(path: string): monacoTypes.Uri {
   return monaco.Uri.parse("file:///" + encoded);
 }
 
+// Resolve a markdown link href (relative or absolute) against the directory of
+// the currently-open file, preserving `fromFile`'s separator style (Windows
+// uses backslashes). Any query/anchor suffix is stripped.
+function resolveRelativePath(fromFile: string, href: string): string {
+  const clean = href.replace(/[?#].*$/, "");
+  const isWin = fromFile.includes("\\");
+  const norm = fromFile.replace(/\\/g, "/");
+  const dir = norm.slice(0, norm.lastIndexOf("/"));
+  const combined = clean.startsWith("/") ? clean : `${dir}/${clean}`;
+  const out: string[] = [];
+  for (const part of combined.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      out.pop();
+      continue;
+    }
+    out.push(part);
+  }
+  let result = out.join("/");
+  if (combined.startsWith("/")) result = `/${result}`;
+  return isWin ? result.replace(/\//g, "\\") : result;
+}
+
 export function EditorPane({
   file,
   onChange,
   onCursorChange,
+  onOpenPath,
   wrapEnabled,
   jumpRequest,
   jumpRequestNonce,
@@ -62,6 +88,24 @@ export function EditorPane({
   useEffect(() => {
     if (!isMarkdown) setPreview(false);
   }, [isMarkdown]);
+
+  // Markdown preview links: bare <a> would navigate the whole webview away
+  // from the app (no back button). Intercept — open web URLs in the OS
+  // browser, and relative/local file links as an editor tab.
+  const handleMdLinkClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, href: string | undefined): void => {
+      e.preventDefault();
+      if (href === undefined || href.length === 0) return;
+      if (/^(https?:|mailto:)/i.test(href)) {
+        void openExternalUrl(href);
+        return;
+      }
+      if (href.startsWith("#")) return; // in-page anchor: no-op
+      if (file === null || onOpenPath === undefined) return;
+      onOpenPath(resolveRelativePath(file.path, href));
+    },
+    [file, onOpenPath],
+  );
 
   const handleMount: OnMount = useCallback(
     (editor, _monacoInstance) => {
@@ -242,7 +286,21 @@ export function EditorPane({
       {isMarkdown && preview && file !== null ? (
         <div className="editor-pane__preview">
           <div className="chat-md">
-            <Markdown>{file.content}</Markdown>
+            <Markdown
+              components={{
+                a: ({ href, children }) => (
+                  <a
+                    className="chat-md__a"
+                    href={href}
+                    onClick={(e) => handleMdLinkClick(e, href)}
+                  >
+                    {children}
+                  </a>
+                ),
+              }}
+            >
+              {file.content}
+            </Markdown>
           </div>
         </div>
       ) : null}

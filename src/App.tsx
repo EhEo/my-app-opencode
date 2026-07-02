@@ -477,6 +477,9 @@ function App(): React.JSX.Element {
                 file={activeFile}
                 onChange={handleEditorChange}
                 onCursorChange={handleCursorChange}
+                onOpenPath={(p) => {
+                  void handleOpenFile(p);
+                }}
                 wrapEnabled={wrapEnabled}
                 jumpRequest={jumpCounter === 0 ? null : jumpRequestRef.current}
                 jumpRequestNonce={jumpCounter}
