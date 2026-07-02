@@ -2058,6 +2058,9 @@ button {
 .doc-viewer__docx { width: 100%; height: 100%; overflow: auto; background: #525659; padding: 16px; }
 .doc-viewer__docx-body { background: #fff; color: #000; margin: 0 auto; }
 .doc-viewer__docx-body .docx-wrapper { background: transparent; padding: 0; }
+.doc-viewer__xlsx { width: 100%; height: 100%; overflow: hidden; background: var(--bg-editor); position: relative; }
+.doc-viewer__xlsx-host { width: 100%; height: 100%; }
+.doc-viewer__xlsx-host .x-spreadsheet { height: 100%; }
 
 .editor-pane__preview-toggle {
   position: absolute;
