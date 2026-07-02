@@ -57,4 +57,6 @@ export const fs = {
     }),
   gitStatus: (): Promise<GitFileStatus[]> =>
     invoke<GitFileStatus[]>("git_status"),
+  readFileBytes: (path: string): Promise<{ base64: string; size: number }> =>
+    invoke<{ base64: string; size: number }>("read_file_bytes", { path }),
 };

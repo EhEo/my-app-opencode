@@ -17,10 +17,13 @@ import { fs } from "./lib/fs";
 import { getFileName, getLanguageLabel } from "./lib/language";
 import { loadSettings, loadProviderStore, type Settings } from "./lib/settings";
 import { applyConfig as applyMcpConfig } from "./lib/mcp";
+import { fileKind } from "./lib/fileKind";
+import { DocViewer } from "./components/viewers/DocViewer";
 
 interface TabState {
   content: string;
   dirty: boolean;
+  kind: "text" | "viewer";
 }
 
 // Match a (possibly workspace-relative, possibly forward-slash) path against the
@@ -113,8 +116,9 @@ function App(): React.JSX.Element {
   }, [tabs]);
 
   const activeTab = activePath !== null ? tabs[activePath] ?? null : null;
+  const activeIsViewer = activeTab?.kind === "viewer";
   const activeFile: EditorFile | null =
-    activePath !== null && activeTab !== null
+    activePath !== null && activeTab !== null && !activeIsViewer
       ? { path: activePath, content: activeTab.content }
       : null;
   const activeDirty = activeTab?.dirty ?? false;
@@ -145,16 +149,32 @@ function App(): React.JSX.Element {
         return;
       }
 
-      try {
-        const content = await fs.readFile(path);
-        setTabs((prev) => ({ ...prev, [path]: { content, dirty: false } }));
+      const kind = fileKind(path);
+      if (kind === "text" || kind === "markdown") {
+        try {
+          const content = await fs.readFile(path);
+          setTabs((prev) => ({
+            ...prev,
+            [path]: { content, dirty: false, kind: "text" },
+          }));
+          if (!tabsOrderRef.current.includes(path)) {
+            tabsOrderRef.current = [...tabsOrderRef.current, path];
+          }
+          setActivePath(path);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          window.alert(`Failed to open ${getFileName(path)}: ${msg}`);
+        }
+      } else {
+        // image/pdf/docx/xlsx/pptx/binary → viewer tab (no text read)
+        setTabs((prev) => ({
+          ...prev,
+          [path]: { content: "", dirty: false, kind: "viewer" },
+        }));
         if (!tabsOrderRef.current.includes(path)) {
           tabsOrderRef.current = [...tabsOrderRef.current, path];
         }
         setActivePath(path);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        window.alert(`Failed to open ${getFileName(path)}: ${msg}`);
       }
     },
     [tabs],
@@ -169,7 +189,7 @@ function App(): React.JSX.Element {
         if (existing.content === value) return prev;
         return {
           ...prev,
-          [activePath]: { content: value, dirty: true },
+          [activePath]: { ...existing, content: value, dirty: true },
         };
       });
     },
@@ -184,6 +204,7 @@ function App(): React.JSX.Element {
     if (activePath === null) return;
     const tab = tabs[activePath];
     if (tab === undefined) return;
+    if (tab.kind === "viewer") return;
     const savedContent = tab.content;
     try {
       await fs.writeFile(activePath, savedContent);
@@ -256,6 +277,7 @@ function App(): React.JSX.Element {
       // absolute. Resolve to the matching open tab key (separator-insensitive).
       const path = resolveOpenTabKey(inputPath, tabs, rootPath);
       if (path === null) return;
+      if (tabs[path]?.kind === "viewer") return;
       if (opts.force !== true && tabs[path]?.dirty === true) {
         setDiskConflict((prev) => ({ ...prev, [path]: true }));
         return;
@@ -263,11 +285,12 @@ function App(): React.JSX.Element {
       try {
         const fresh = await fs.readFile(path);
         setTabs((prev) => {
-          if (prev[path] === undefined) return prev;
-          if (prev[path]?.dirty === true && opts.force !== true) return prev;
+          const existing = prev[path];
+          if (existing === undefined) return prev;
+          if (existing.dirty === true && opts.force !== true) return prev;
           return {
             ...prev,
-            [path]: { content: fresh, dirty: false },
+            [path]: { ...existing, content: fresh, dirty: false },
           };
         });
         try {
@@ -294,6 +317,11 @@ function App(): React.JSX.Element {
     handleFileChangedRef.current = handleFileChanged;
   }, [handleFileChanged]);
 
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
   useEffect(() => {
     if (activePath === null) return;
     const watched = activePath;
@@ -301,6 +329,7 @@ function App(): React.JSX.Element {
     const baseline = mtimeBaselineRef.current;
     const tick = async (): Promise<void> => {
       if (disposed) return;
+      if (tabsRef.current[watched]?.kind === "viewer") return;
       try {
         const stat = await fs.statFile(watched);
         if (disposed) return;
@@ -455,6 +484,11 @@ function App(): React.JSX.Element {
                   jumpRequestRef.current = null;
                 }}
               />
+              {activeIsViewer && activePath !== null ? (
+                <div className="editor-column__viewer">
+                  <DocViewer path={activePath} kind={fileKind(activePath)} />
+                </div>
+              ) : null}
             </div>
             <StatusBar
               filePath={activePath}

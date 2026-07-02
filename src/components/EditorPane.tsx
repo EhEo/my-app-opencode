@@ -1,6 +1,7 @@
 import Editor, { OnChange, OnMount } from "@monaco-editor/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as monacoTypes from "monaco-editor";
+import Markdown from "react-markdown";
 import { getLanguageId } from "../lib/language";
 import { ensureLanguageRegistered, monaco } from "../lib/monaco";
 
@@ -55,6 +56,12 @@ export function EditorPane({
   const wrapEnabledRef = useRef(wrapEnabled);
   const settingModelRef = useRef(false);
   const [mounted, setMounted] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const isMarkdown = file !== null && /\.(md|markdown)$/i.test(file.path);
+
+  useEffect(() => {
+    if (!isMarkdown) setPreview(false);
+  }, [isMarkdown]);
 
   const handleMount: OnMount = useCallback(
     (editor, _monacoInstance) => {
@@ -222,6 +229,23 @@ export function EditorPane({
           padding: { top: 8, bottom: 8 },
         }}
       />
+      {isMarkdown ? (
+        <button
+          type="button"
+          className="editor-pane__preview-toggle toolbar__btn"
+          onClick={() => setPreview((v) => !v)}
+          title={preview ? "편집으로" : "미리보기"}
+        >
+          {preview ? "편집" : "미리보기"}
+        </button>
+      ) : null}
+      {isMarkdown && preview && file !== null ? (
+        <div className="editor-pane__preview">
+          <div className="chat-md">
+            <Markdown>{file.content}</Markdown>
+          </div>
+        </div>
+      ) : null}
       {file === null ? (
         <div className="editor-pane__empty-state">
           <div className="editor-pane__empty-glyph" aria-hidden="true">

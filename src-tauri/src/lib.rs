@@ -211,6 +211,35 @@ fn read_file(path: String, state: State<'_, AppState>) -> Result<String, String>
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+struct FileBytes {
+    base64: String,
+    size: u64,
+}
+
+const MAX_VIEW_BYTES: u64 = 25_000_000;
+
+#[tauri::command(rename_all = "camelCase")]
+fn read_file_bytes(path: String, state: State<'_, AppState>) -> Result<FileBytes, String> {
+    let root = require_root(&state)?;
+    let target = validate_path(&path, &root)?;
+    let meta = fs::metadata(&target).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_VIEW_BYTES {
+        return Err(format!(
+            "file is too large to view ({} bytes, limit {MAX_VIEW_BYTES})",
+            meta.len()
+        ));
+    }
+    let bytes = fs::read(&target).map_err(|e| e.to_string())?;
+    use base64::Engine;
+    let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(FileBytes {
+        base64,
+        size: meta.len(),
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct FileStat {
     mtime_ms: u64,
     size: u64,
@@ -1490,6 +1519,7 @@ pub fn run() {
             set_workspace_root,
             list_dir,
             read_file,
+            read_file_bytes,
             stat_file,
             write_file,
             search_workspace,
@@ -1576,5 +1606,17 @@ mod exec_tests {
             .collect();
         assert!(String::from_utf8_lossy(&stdout).contains("hello"));
         assert!(matches!(events.last(), Some(ExecEvent::Exit { code: 0 })));
+    }
+}
+
+#[cfg(test)]
+mod file_bytes_tests {
+    #[test]
+    fn base64_round_trips() {
+        use base64::Engine;
+        let enc = base64::engine::general_purpose::STANDARD.encode(b"hi");
+        assert_eq!(enc, "aGk=");
+        let dec = base64::engine::general_purpose::STANDARD.decode("aGk=").unwrap();
+        assert_eq!(dec, b"hi");
     }
 }
