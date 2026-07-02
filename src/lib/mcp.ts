@@ -68,6 +68,15 @@ function parseNamespacedName(
 ): { server: string; tool: string } | null {
   if (!full.startsWith(NAMESPACE_PREFIX)) return null;
   const rest = full.slice(NAMESPACE_PREFIX.length);
+  // A server name may itself contain "__", which would make a naive
+  // first-"__" split route to the wrong (or a nonexistent) server. Prefer an
+  // exact match against a known connected server name.
+  for (const server of state.servers.keys()) {
+    const prefix = server + "__";
+    if (rest.startsWith(prefix)) {
+      return { server, tool: rest.slice(prefix.length) };
+    }
+  }
   const sep = rest.indexOf("__");
   if (sep === -1) return null;
   return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
@@ -207,17 +216,27 @@ export async function applyConfig(
     }
   }
   for (const [name, entry] of Object.entries(desired)) {
-    if (state.status.get(name) === "connected" && state.servers.has(name)) {
-      continue;
-    }
+    // Check enabled/url BEFORE the connected-skip, otherwise a server that is
+    // currently connected can never be disabled or reconnected (the skip fires
+    // first and the change is silently ignored).
     if (!entry.enabled) {
-      state.status.set(name, "disabled");
-      state.errors.delete(name);
+      if (state.servers.has(name)) {
+        await disconnectServer(name);
+      } else {
+        state.status.set(name, "disabled");
+        state.errors.delete(name);
+      }
       continue;
     }
     if (entry.url.trim() === "") {
+      if (state.servers.has(name)) {
+        await disconnectServer(name);
+      }
       state.status.set(name, "error");
       state.errors.set(name, "URL이 비어있습니다");
+      continue;
+    }
+    if (state.status.get(name) === "connected" && state.servers.has(name)) {
       continue;
     }
     void connectServer(name, entry);

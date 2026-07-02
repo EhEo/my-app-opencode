@@ -30,7 +30,13 @@ type MonacoViewState = monacoTypes.editor.ICodeEditorViewState;
 
 function buildModelUri(path: string): monacoTypes.Uri {
   const normalized = path.replace(/\\/g, "/");
-  return monaco.Uri.parse("file:///" + encodeURI(normalized));
+  // encodeURI leaves `?` and `#` unescaped; in a URI those start the query /
+  // fragment and would corrupt (or collide) the model URI, so escape them too.
+  const encoded = encodeURI(normalized).replace(
+    /[?#]/g,
+    (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase(),
+  );
+  return monaco.Uri.parse("file:///" + encoded);
 }
 
 export function EditorPane({
@@ -110,6 +116,10 @@ export function EditorPane({
     }
 
     let model = modelsRef.current.get(file.path);
+    if (model !== undefined && model.isDisposed()) {
+      modelsRef.current.delete(file.path);
+      model = undefined;
+    }
     if (model === undefined) {
       const languageId = getLanguageId(file.path);
       model = monaco.editor.createModel(
@@ -180,9 +190,33 @@ export function EditorPane({
     onJumpConsumed?.();
   }, [jumpRequestNonce, jumpRequest, file, onJumpConsumed]);
 
-  if (file === null) {
-    return (
-      <section className="editor-pane editor-pane--empty">
+  // The Monaco <Editor> stays mounted even with no file open (empty state is an
+  // overlay). Unmounting/remounting it — which is what a `file === null` early
+  // return did — disposed the editor and left a stale ref, crashing on reopen.
+  return (
+    <section className="editor-pane">
+      <Editor
+        height="100%"
+        width="100%"
+        theme="opencode-dark"
+        onMount={handleMount}
+        onChange={handleChange}
+        options={{
+          minimap: { enabled: true },
+          fontSize: 14,
+          fontLigatures: true,
+          automaticLayout: true,
+          tabSize: 2,
+          wordWrap: wrapEnabled ? "on" : "off",
+          scrollBeyondLastLine: false,
+          renderWhitespace: "selection",
+          smoothScrolling: true,
+          cursorBlinking: "smooth",
+          cursorSmoothCaretAnimation: "on",
+          padding: { top: 8, bottom: 8 },
+        }}
+      />
+      {file === null ? (
         <div className="editor-pane__empty-state">
           <div className="editor-pane__empty-glyph" aria-hidden="true">
             <svg
@@ -213,33 +247,7 @@ export function EditorPane({
             Use the Open Folder button in the title bar.
           </p>
         </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="editor-pane">
-      <Editor
-        height="100%"
-        width="100%"
-        theme="opencode-dark"
-        onMount={handleMount}
-        onChange={handleChange}
-        options={{
-          minimap: { enabled: true },
-          fontSize: 14,
-          fontLigatures: true,
-          automaticLayout: true,
-          tabSize: 2,
-          wordWrap: wrapEnabled ? "on" : "off",
-          scrollBeyondLastLine: false,
-          renderWhitespace: "selection",
-          smoothScrolling: true,
-          cursorBlinking: "smooth",
-          cursorSmoothCaretAnimation: "on",
-          padding: { top: 8, bottom: 8 },
-        }}
-      />
+      ) : null}
     </section>
   );
 }

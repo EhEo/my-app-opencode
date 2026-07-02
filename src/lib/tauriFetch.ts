@@ -92,9 +92,26 @@ export function createTauriFetch(): typeof fetch {
           }
         }
       };
-      init?.signal?.addEventListener("abort", () => {
+      const onAbort = (): void => {
         void invoke("proxy_abort", { streamId });
-      });
+        // Before headers arrive the outer Promise is still pending; reject it so
+        // a Stop actually unblocks the caller instead of hanging on "Running".
+        if (!started) {
+          started = true;
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        } else {
+          controller?.error(
+            new DOMException("The operation was aborted.", "AbortError"),
+          );
+        }
+      };
+      if (init?.signal) {
+        if (init.signal.aborted) {
+          onAbort();
+        } else {
+          init.signal.addEventListener("abort", onAbort);
+        }
+      }
       void invoke("proxy_request", {
         method,
         url,

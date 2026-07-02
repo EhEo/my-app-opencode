@@ -102,7 +102,7 @@ function coerceArgs(raw: unknown): Record<string, unknown> {
 export async function executeTool(
   name: string,
   rawArgs: unknown,
-): Promise<{ result: string; changedPath?: string }> {
+): Promise<{ result: string; changedPath?: string; error?: string }> {
   const args = coerceArgs(rawArgs);
   try {
     switch (name) {
@@ -120,6 +120,8 @@ export async function executeTool(
         const path = String(args.path ?? "");
         const content = String(args.content ?? "");
         await fs.writeFile(path, content);
+        // changedPath stays workspace-relative; App resolves it against the
+        // workspace root to match its absolute tab keys.
         return { result: `Wrote ${path}`, changedPath: path };
       }
       case "list_dir": {
@@ -137,7 +139,14 @@ export async function executeTool(
       case "run_command": {
         const command = String(args.command ?? "");
         const r = await invoke<RunCommandResult>("run_command", { command });
-        const result = `exitCode: ${r.exitCode}\n--- stdout ---\n${r.stdout}\n--- stderr ---\n${r.stderr}`;
+        const cap = (s: string): string =>
+          s.length > MAX_READ_CHARS
+            ? s.slice(0, MAX_READ_CHARS) +
+              `\n...[truncated ${s.length - MAX_READ_CHARS} chars]`
+            : s;
+        const result = `exitCode: ${r.exitCode}\n--- stdout ---\n${cap(
+          r.stdout,
+        )}\n--- stderr ---\n${cap(r.stderr)}`;
         return { result };
       }
       default:
@@ -147,8 +156,7 @@ export async function executeTool(
         return { result: `ERROR: unknown tool ${name}` };
     }
   } catch (e) {
-    return {
-      result: `ERROR: ${e instanceof Error ? e.message : String(e)}`,
-    };
+    const message = e instanceof Error ? e.message : String(e);
+    return { result: `ERROR: ${message}`, error: message };
   }
 }

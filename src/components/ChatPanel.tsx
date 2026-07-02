@@ -248,9 +248,28 @@ export function ChatPanel({
           onToolEnd: (call, result, error) =>
             updateToolCard(call.id, result, error),
           onFileChanged: (path) => onFileChanged(path),
-          onDone: (_reason, finalMessages) => {
+          onDone: (reason, finalMessages) => {
             if (finalMessages !== undefined && finalMessages.length > 0) {
               setMessages(finalMessages);
+            }
+            // Finalize any text left mid-stream (e.g. on Stop) so it doesn't
+            // render with a perpetual blinking cursor.
+            setUiItems((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.kind === "streaming-assistant") {
+                const next = prev.slice();
+                next[next.length - 1] = {
+                  kind: "assistant",
+                  assistantContent: last.streamingContent ?? "",
+                };
+                return next;
+              }
+              return prev;
+            });
+            if (reason === "max_iterations") {
+              addErrorMessage(
+                "Reached the step limit (25 iterations). The task may be incomplete — send another message to continue.",
+              );
             }
           },
           onError: (err) => {

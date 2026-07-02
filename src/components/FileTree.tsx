@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fs, type FileEntry } from "../lib/fs";
 import { getFileName } from "../lib/language";
 
@@ -7,6 +7,8 @@ interface FileTreeProps {
   selectedPath: string | null;
   onOpenFile: (path: string) => void;
   gitStatuses: Record<string, string>;
+  /** Bump to re-list every currently-loaded directory (e.g. after a write). */
+  refreshToken?: number;
 }
 
 interface NodeState {
@@ -28,8 +30,13 @@ export function FileTree({
   selectedPath,
   onOpenFile,
   gitStatuses,
+  refreshToken,
 }: FileTreeProps): React.JSX.Element {
   const [nodes, setNodes] = useState<Record<string, NodeState>>({});
+  const nodesRef = useRef<Record<string, NodeState>>({});
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   useEffect(() => {
     setNodes({});
@@ -92,17 +99,25 @@ export function FileTree({
         }));
         return;
       }
-      if (current.entries === null) {
-        void loadChildren(path, true);
-      } else {
-        setNodes((prev) => ({
-          ...prev,
-          [path]: { ...current, expanded: true },
-        }));
-      }
+      // Always re-list on expand so freshly created/deleted entries appear;
+      // cached entries stay visible while the reload is in flight.
+      void loadChildren(path, true);
     },
     [nodes, loadChildren],
   );
+
+  // Re-list every directory already loaded when the refresh token changes
+  // (e.g. after the agent writes a file). Keeps the tree in sync with disk.
+  useEffect(() => {
+    if (refreshToken === undefined || refreshToken === 0 || rootPath === null) {
+      return;
+    }
+    for (const [path, state] of Object.entries(nodesRef.current)) {
+      if (state.entries !== null && state.expanded) {
+        void loadChildren(path, true);
+      }
+    }
+  }, [refreshToken, rootPath, loadChildren]);
 
   if (rootPath === null) {
     return (

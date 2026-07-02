@@ -76,28 +76,40 @@ export function TerminalPane({ cwd }: TerminalPaneProps): React.JSX.Element {
     });
     onDataUnsubRef.current = onDataDisposable;
 
-    const initialCols = Math.max(2, Math.floor(container.clientWidth / 8));
-    const initialRows = Math.max(2, Math.floor(container.clientHeight / 17));
+    // Size the PTY from the actual fitted grid, not a hardcoded px estimate.
     fit.fit();
+    const initialCols = term.cols;
+    const initialRows = term.rows;
 
     void (async () => {
       try {
         const sid = await createSession(cwd, initialCols, initialRows, {
           onData: (bytes) => {
             if (disposed) return;
-            term.write(new TextDecoder().decode(bytes));
+            // Feed raw bytes so xterm's stateful UTF-8 decoder handles
+            // multibyte chars split across chunk boundaries (한글/이모지).
+            term.write(bytes);
           },
           onExit: (code) => {
             if (disposed) return;
+            currentSessionId = null;
+            sessionIdRef.current = null;
             term.write(`\r\n\x1b[2m[process exited with code ${code}]\x1b[0m\r\n`);
           },
         });
         if (disposed) {
-          await killSession(sid);
+          void killSession(sid).catch(() => {});
           return;
         }
         currentSessionId = sid;
         sessionIdRef.current = sid;
+        // Resync the PTY to the fitted grid — the initial size can drift before
+        // the first ResizeObserver callback fires.
+        try {
+          await resizeSession(sid, term.cols, term.rows);
+        } catch {
+          void 0;
+        }
       } catch (e) {
         if (disposed) return;
         const msg = e instanceof Error ? e.message : String(e);
@@ -136,7 +148,8 @@ export function TerminalPane({ cwd }: TerminalPaneProps): React.JSX.Element {
       termRef.current = null;
       fitRef.current = null;
       if (sid !== null) {
-        void killSession(sid);
+        // May already be gone (shell exited on its own); ignore the rejection.
+        void killSession(sid).catch(() => {});
       }
       term.dispose();
     };

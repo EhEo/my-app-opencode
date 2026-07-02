@@ -94,6 +94,8 @@ function safeParseArgs(raw: unknown): Record<string, unknown> {
 
 export async function runAgent(opts: RunAgentOptions): Promise<void> {
   const { settings, callbacks } = opts;
+  // Hoisted so the catch handler can hand the partial history to onDone on abort.
+  const working: ChatMessage[] = opts.messages.map((m) => ({ ...m }));
   try {
     const client = createClient(settings);
     let sys = opts.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
@@ -110,8 +112,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<void> {
       void 0;
     }
     const maxIter = opts.maxIterations ?? 25;
-
-    const working: ChatMessage[] = opts.messages.map((m) => ({ ...m }));
 
     for (let iter = 0; iter < maxIter; iter++) {
       if (opts.signal?.aborted) {
@@ -168,17 +168,28 @@ export async function runAgent(opts: RunAgentOptions): Promise<void> {
 
       if (finalToolCalls.length === 0) {
         callbacks.onAssistantText(content);
+        // Persist the final assistant turn into history — without this it is
+        // shown in the UI but dropped from `messages`, so the next turn loses it.
+        working.push({ role: "assistant", content });
         callbacks.onDone("completed", working);
         return;
       }
 
+      // Finalize any text streamed alongside the tool calls so its UI bubble
+      // stops rendering as perpetually "streaming".
+      if (content.length > 0) {
+        callbacks.onAssistantText(content);
+      }
       working.push({ role: "assistant", content, toolCalls: finalToolCalls });
 
       for (const call of finalToolCalls) {
         callbacks.onToolStart(call);
         try {
-          const { result, changedPath } = await executeTool(call.name, call.args);
-          callbacks.onToolEnd(call, result);
+          const { result, changedPath, error } = await executeTool(
+            call.name,
+            call.args,
+          );
+          callbacks.onToolEnd(call, result, error);
           if (changedPath) callbacks.onFileChanged(changedPath);
           working.push({
             role: "tool",
@@ -199,6 +210,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<void> {
 
     callbacks.onDone("max_iterations", working);
   } catch (err) {
+    // A user Stop (AbortSignal) surfaces here as a thrown abort error. Treat it
+    // as a clean "aborted" completion rather than an error card, and keep the
+    // partial history so this turn's tool records aren't lost.
+    if (opts.signal?.aborted) {
+      callbacks.onDone("aborted", working);
+      return;
+    }
     callbacks.onError(err instanceof Error ? err : new Error(String(err)));
   }
 }

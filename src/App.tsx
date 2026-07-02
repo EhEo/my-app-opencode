@@ -15,11 +15,34 @@ import { SettingsModal } from "./components/SettingsModal";
 import { SearchModal } from "./components/SearchModal";
 import { fs } from "./lib/fs";
 import { getFileName, getLanguageLabel } from "./lib/language";
-import { loadSettings, type Settings } from "./lib/settings";
+import { loadSettings, loadProviderStore, type Settings } from "./lib/settings";
+import { applyConfig as applyMcpConfig } from "./lib/mcp";
 
 interface TabState {
   content: string;
   dirty: boolean;
+}
+
+// Match a (possibly workspace-relative, possibly forward-slash) path against the
+// absolute tab keys, case- and separator-insensitively (Windows paths differ in
+// slash direction and case between the agent, git, and the OS).
+function resolveOpenTabKey(
+  input: string,
+  tabs: Record<string, TabState>,
+  rootPath: string | null,
+): string | null {
+  if (tabs[input] !== undefined) return input;
+  const norm = (p: string): string =>
+    p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const candidates = [norm(input)];
+  if (rootPath !== null) {
+    candidates.push(norm(rootPath + "/" + input));
+  }
+  for (const key of Object.keys(tabs)) {
+    const nk = norm(key);
+    if (candidates.includes(nk)) return key;
+  }
+  return null;
 }
 
 function App(): React.JSX.Element {
@@ -36,6 +59,10 @@ function App(): React.JSX.Element {
   const [searchOpen, setSearchOpen] = useState(false);
   const [diskConflict, setDiskConflict] = useState<Record<string, boolean>>({});
   const [gitStatuses, setGitStatuses] = useState<Record<string, string>>({});
+  const [fileTreeRefresh, setFileTreeRefresh] = useState(0);
+  // Per-path mtime baseline for the external-change watcher, kept in a ref so a
+  // re-render (e.g. typing) doesn't reset it and miss real external edits.
+  const mtimeBaselineRef = useRef<Map<string, number>>(new Map());
   const jumpRequestRef = useRef<{
     path: string;
     line: number;
@@ -59,6 +86,14 @@ function App(): React.JSX.Element {
         if (!cancelled) {
           setSettings(null);
         }
+      }
+      // Connect saved MCP servers at startup — previously they only connected
+      // after the user opened the settings modal once.
+      try {
+        const store = await loadProviderStore();
+        await applyMcpConfig(store.mcp);
+      } catch {
+        void 0;
       }
     })();
     return () => {
@@ -94,7 +129,7 @@ function App(): React.JSX.Element {
       tabsOrderRef.current = [];
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      void msg;
+      window.alert(`Failed to open folder: ${msg}`);
     }
   }, []);
 
@@ -114,7 +149,7 @@ function App(): React.JSX.Element {
         setActivePath(path);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        void msg;
+        window.alert(`Failed to open ${getFileName(path)}: ${msg}`);
       }
     },
     [tabs],
@@ -144,16 +179,28 @@ function App(): React.JSX.Element {
     if (activePath === null) return;
     const tab = tabs[activePath];
     if (tab === undefined) return;
+    const savedContent = tab.content;
     try {
-      await fs.writeFile(activePath, tab.content);
+      await fs.writeFile(activePath, savedContent);
       setTabs((prev) => {
         const existing = prev[activePath];
         if (existing === undefined) return prev;
+        // Only clear dirty if the buffer hasn't changed since we captured it —
+        // otherwise edits made during the async write would be lost silently.
+        if (existing.content !== savedContent) return prev;
         return { ...prev, [activePath]: { ...existing, dirty: false } };
       });
+      // Record our own write's mtime so the watcher doesn't flag it as an
+      // external change on the next tick.
+      try {
+        const stat = await fs.statFile(activePath);
+        mtimeBaselineRef.current.set(activePath, stat.mtimeMs);
+      } catch {
+        void 0;
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      void msg;
+      window.alert(`Failed to save ${getFileName(activePath)}: ${msg}`);
     }
   }, [activePath, tabs]);
 
@@ -197,11 +244,13 @@ function App(): React.JSX.Element {
 
   const handleFileChanged = useCallback(
     async (
-      path: string,
+      inputPath: string,
       opts: { force?: boolean } = {},
     ): Promise<void> => {
-      const wasOpen = tabs[path] !== undefined;
-      if (!wasOpen) return;
+      // The agent reports workspace-relative paths ("src/foo.ts"); tab keys are
+      // absolute. Resolve to the matching open tab key (separator-insensitive).
+      const path = resolveOpenTabKey(inputPath, tabs, rootPath);
+      if (path === null) return;
       if (opts.force !== true && tabs[path]?.dirty === true) {
         setDiskConflict((prev) => ({ ...prev, [path]: true }));
         return;
@@ -216,6 +265,12 @@ function App(): React.JSX.Element {
             [path]: { content: fresh, dirty: false },
           };
         });
+        try {
+          const stat = await fs.statFile(path);
+          mtimeBaselineRef.current.set(path, stat.mtimeMs);
+        } catch {
+          void 0;
+        }
         setDiskConflict((prev) => {
           const next = { ...prev };
           delete next[path];
@@ -226,23 +281,30 @@ function App(): React.JSX.Element {
         void msg;
       }
     },
-    [tabs],
+    [tabs, rootPath],
   );
+
+  const handleFileChangedRef = useRef(handleFileChanged);
+  useEffect(() => {
+    handleFileChangedRef.current = handleFileChanged;
+  }, [handleFileChanged]);
 
   useEffect(() => {
     if (activePath === null) return;
+    const watched = activePath;
     let disposed = false;
-    let lastMtime: number | null = null;
+    const baseline = mtimeBaselineRef.current;
     const tick = async (): Promise<void> => {
       if (disposed) return;
       try {
-        const stat = await fs.statFile(activePath);
+        const stat = await fs.statFile(watched);
         if (disposed) return;
-        if (lastMtime === null) {
-          lastMtime = stat.mtimeMs;
-        } else if (stat.mtimeMs !== lastMtime) {
-          lastMtime = stat.mtimeMs;
-          void handleFileChanged(activePath);
+        const prev = baseline.get(watched);
+        if (prev === undefined) {
+          baseline.set(watched, stat.mtimeMs);
+        } else if (stat.mtimeMs !== prev) {
+          baseline.set(watched, stat.mtimeMs);
+          void handleFileChangedRef.current(watched);
         }
       } catch {
         void 0;
@@ -256,7 +318,7 @@ function App(): React.JSX.Element {
       disposed = true;
       window.clearInterval(id);
     };
-  }, [activePath, handleFileChanged]);
+  }, [activePath]);
 
   useEffect(() => {
     if (rootPath === null) {
@@ -361,6 +423,7 @@ function App(): React.JSX.Element {
               void handleOpenFile(p);
             }}
             gitStatuses={gitStatuses}
+            refreshToken={fileTreeRefresh}
           />
           <div className="editor-column">
             <Tabs
@@ -411,15 +474,19 @@ function App(): React.JSX.Element {
               onOpenSettings={handleOpenSettings}
               onFileChanged={(p) => {
                 void handleFileChanged(p);
+                setFileTreeRefresh((n) => n + 1);
               }}
             />
           ) : null}
         </div>
-        {terminalVisible ? (
-          <div className="app__bottom">
-            <TerminalPane cwd={rootPath} />
-          </div>
-        ) : null}
+        {/* Kept mounted while hidden — unmounting would kill the shell session
+            (and any process running in it). Toggle visibility via CSS instead. */}
+        <div
+          className="app__bottom"
+          style={{ display: terminalVisible ? undefined : "none" }}
+        >
+          <TerminalPane cwd={rootPath} />
+        </div>
       </div>
       <SettingsModal
         open={settingsOpen}

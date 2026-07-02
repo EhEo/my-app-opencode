@@ -39,23 +39,44 @@ fn validate_path(raw: &str, root: &Path) -> Result<PathBuf, String> {
         root.join(raw)
     };
 
-    let canon_root = root
-        .canonicalize()
+    // dunce::canonicalize avoids the Windows `\\?\` verbatim prefix that plain
+    // std canonicalize emits — that prefix breaks cmd.exe cwd (UNC fallback to
+    // C:\Windows) and leaks into every path handed to the frontend / Monaco.
+    let canon_root = dunce::canonicalize(root)
         .map_err(|e| format!("failed to canonicalize root: {e}"))?;
 
-    let canon = match candidate.canonicalize() {
+    let canon = match dunce::canonicalize(&candidate) {
         Ok(p) => p,
         Err(_) => {
-            let parent = candidate
-                .parent()
-                .ok_or_else(|| "path has no parent".to_string())?;
-            let file_name = candidate
-                .file_name()
-                .ok_or_else(|| "path has no file name".to_string())?;
-            let canon_parent = parent
-                .canonicalize()
-                .map_err(|e| format!("failed to canonicalize parent: {e}"))?;
-            canon_parent.join(file_name)
+            // Target does not exist yet (write/create). Resolve the deepest
+            // existing ancestor, then re-attach the remaining components so
+            // callers can create nested directories (e.g. src/a/b/new.ts).
+            // Reject `..`/`.` in the not-yet-existing tail to keep the
+            // traversal guard intact.
+            let mut existing = candidate.as_path();
+            let mut tail: Vec<std::ffi::OsString> = Vec::new();
+            loop {
+                let parent = existing
+                    .parent()
+                    .ok_or_else(|| "failed to canonicalize parent".to_string())?;
+                let name = existing
+                    .file_name()
+                    .ok_or_else(|| "invalid path component".to_string())?;
+                tail.push(name.to_os_string());
+                if parent.exists() {
+                    let canon_parent = dunce::canonicalize(parent)
+                        .map_err(|e| format!("failed to canonicalize parent: {e}"))?;
+                    let mut resolved = canon_parent;
+                    for comp in tail.iter().rev() {
+                        if comp == ".." || comp == "." {
+                            return Err("path outside workspace".to_string());
+                        }
+                        resolved.push(comp);
+                    }
+                    break resolved;
+                }
+                existing = parent;
+            }
         }
     };
 
@@ -63,6 +84,29 @@ fn validate_path(raw: &str, root: &Path) -> Result<PathBuf, String> {
         return Err("path outside workspace".to_string());
     }
     Ok(canon)
+}
+
+/// Suppress the console window Windows would otherwise flash for each child
+/// process (git, taskkill, cmd) in a release/windowed build. No-op elsewhere.
+#[cfg(windows)]
+fn no_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+#[cfg(not(windows))]
+fn no_window(_cmd: &mut Command) {}
+
+/// Reject skill names that could escape the skills directory.
+fn validate_skill_name(name: &str) -> Result<String, String> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err("skill name is empty".to_string());
+    }
+    if n == "." || n == ".." || n.contains('/') || n.contains('\\') {
+        return Err("invalid skill name".to_string());
+    }
+    Ok(n.to_string())
 }
 
 fn require_root(state: &AppState) -> Result<PathBuf, String> {
@@ -93,8 +137,7 @@ fn set_workspace_root(path: Option<String>, state: State<'_, AppState>) -> Resul
         .map_err(|e| format!("state lock poisoned: {e}"))?;
     match path {
         Some(p) => {
-            let canon = PathBuf::from(&p)
-                .canonicalize()
+            let canon = dunce::canonicalize(&p)
                 .map_err(|e| format!("failed to canonicalize root: {e}"))?;
             if !canon.is_dir() {
                 return Err("workspace root is not a directory".to_string());
@@ -143,12 +186,27 @@ fn list_dir(path: String, state: State<'_, AppState>) -> Result<Vec<FileEntry>, 
 }
 
 // Binary files are rejected: the editor is text-only in Phase 1.
+const MAX_READ_BYTES: u64 = 20_000_000;
+
 #[tauri::command(rename_all = "camelCase")]
 fn read_file(path: String, state: State<'_, AppState>) -> Result<String, String> {
     let root = require_root(&state)?;
     let target = validate_path(&path, &root)?;
+    let meta = fs::metadata(&target).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_READ_BYTES {
+        return Err(format!(
+            "file is too large to open ({} bytes, limit {MAX_READ_BYTES})",
+            meta.len()
+        ));
+    }
     let bytes = fs::read(&target).map_err(|e| e.to_string())?;
-    String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8 / binary".to_string())
+    let text =
+        String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8 / binary".to_string())?;
+    // Strip a leading UTF-8 BOM so it doesn't surface as a stray U+FEFF glyph.
+    Ok(text
+        .strip_prefix('\u{feff}')
+        .map(str::to_string)
+        .unwrap_or(text))
 }
 
 #[derive(serde::Serialize)]
@@ -183,23 +241,33 @@ struct GitFileStatus {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-fn git_status(state: State<'_, AppState>) -> Result<Vec<GitFileStatus>, String> {
+async fn git_status(state: State<'_, AppState>) -> Result<Vec<GitFileStatus>, String> {
     let root = require_root(&state)?;
+    tokio::task::spawn_blocking(move || git_status_blocking(&root))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn git_status_blocking(root: &Path) -> Result<Vec<GitFileStatus>, String> {
     if !root.join(".git").exists() {
         return Ok(Vec::new());
     }
-    let output = match Command::new("git")
-        .args([
-            "-C",
-            &root.to_string_lossy(),
-            "status",
-            "--porcelain=2",
-            "--untracked-files=all",
-            "--ignored=no",
-        ])
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-    {
+    let mut cmd = Command::new("git");
+    cmd.args([
+        "-C",
+        &root.to_string_lossy(),
+        // quotepath=false keeps non-ASCII (e.g. Korean) filenames literal UTF-8
+        // instead of C-style octal escapes that never match the tree keys.
+        "-c",
+        "core.quotepath=false",
+        "status",
+        "--porcelain=1",
+        "--untracked-files=all",
+        "--ignored=no",
+    ])
+    .env("GIT_TERMINAL_PROMPT", "0");
+    no_window(&mut cmd);
+    let output = match cmd.output() {
         Ok(o) => o,
         Err(_) => return Ok(Vec::new()),
     };
@@ -208,51 +276,45 @@ fn git_status(state: State<'_, AppState>) -> Result<Vec<GitFileStatus>, String> 
     }
     let text = String::from_utf8_lossy(&output.stdout);
     let mut results: Vec<GitFileStatus> = Vec::new();
+    // --porcelain=1 format: "XY <path>" (or "XY <orig> -> <path>" for R/C).
     for line in text.lines() {
-        let rest = match line.strip_prefix("1 ") {
-            Some(r) => r,
-            None => continue,
-        };
-        // --porcelain=2 format: "1 XY sub <mH> <mI> <mW> <hH> <hI> <path>\t<origPath>"
-        let mut parts = rest.splitn(2, ' ');
-        let codes = match parts.next() {
-            Some(c) => c,
-            None => continue,
-        };
-        let payload = match parts.next() {
-            Some(p) => p,
-            None => continue,
-        };
-        if codes.len() < 2 {
+        if line.len() < 4 {
             continue;
         }
-        let index = codes.as_bytes()[0] as char;
-        let worktree = codes.as_bytes()[1] as char;
-        let path = payload.split('\t').next().unwrap_or("").trim();
-        if path.is_empty() {
+        let bytes = line.as_bytes();
+        let index = bytes[0] as char;
+        let worktree = bytes[1] as char;
+        let rest = &line[3..];
+        let raw_path = if index == 'R' || index == 'C' {
+            rest.split(" -> ").nth(1).unwrap_or(rest)
+        } else {
+            rest
+        };
+        let raw_path = raw_path.trim().trim_matches('"');
+        if raw_path.is_empty() {
             continue;
         }
         let status = match (index, worktree) {
-            ('.', 'M') => "modified",
-            ('M', '.') => "staged-modified",
-            ('M', 'M') => "modified",
-            ('.', 'A') => "added",
-            ('A', '.') => "staged-added",
-            ('A', 'A') => "added",
-            ('.', 'D') => "deleted",
-            ('D', '.') => "staged-deleted",
-            ('D', 'D') => "deleted",
             ('?', '?') => "untracked",
-            ('R', '.') | ('R', 'R') => "renamed",
-            ('C', '.') | ('C', 'C') => "copied",
+            ('M', ' ') => "staged-modified",
+            (' ', 'M') | ('M', 'M') => "modified",
+            ('A', ' ') => "staged-added",
+            (' ', 'A') | ('A', 'A') => "added",
+            ('D', ' ') => "staged-deleted",
+            (' ', 'D') | ('D', 'D') => "deleted",
+            ('R', _) => "renamed",
+            ('C', _) => "copied",
             _ if worktree == 'M' => "modified",
             _ if worktree == 'D' => "deleted",
             _ if worktree == 'A' => "added",
-            _ if worktree == '?' => "untracked",
+            _ if index != ' ' => "staged-modified",
             _ => continue,
         };
+        // Normalize git's forward-slash relative path to the OS separator so it
+        // matches the tree/tab keys the frontend builds from list_dir.
+        let rel: PathBuf = Path::new(raw_path).components().collect();
         results.push(GitFileStatus {
-            path: root.join(path).to_string_lossy().into_owned(),
+            path: root.join(rel).to_string_lossy().into_owned(),
             status: status.to_string(),
         });
     }
@@ -271,8 +333,27 @@ struct SearchResult {
 const MAX_RESULTS: usize = 500;
 const MAX_FILE_BYTES: u64 = 5_000_000;
 
+// Directories skipped during search: build/dependency output that would both
+// slow the walk and flood the 500-result cap with junk.
+const IGNORED_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".svelte-kit",
+    "out",
+    ".venv",
+    "__pycache__",
+];
+
+fn is_ignored_dir(name: &str) -> bool {
+    IGNORED_DIRS.contains(&name)
+}
+
 #[tauri::command(rename_all = "camelCase")]
-fn search_workspace(
+async fn search_workspace(
     pattern: String,
     use_regex: bool,
     include_glob: Option<String>,
@@ -280,6 +361,20 @@ fn search_workspace(
     state: State<'_, AppState>,
 ) -> Result<Vec<SearchResult>, String> {
     let root = require_root(&state)?;
+    tokio::task::spawn_blocking(move || {
+        search_workspace_blocking(pattern, use_regex, include_glob, exclude_glob, &root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn search_workspace_blocking(
+    pattern: String,
+    use_regex: bool,
+    include_glob: Option<String>,
+    exclude_glob: Option<String>,
+    root: &Path,
+) -> Result<Vec<SearchResult>, String> {
     if pattern.is_empty() {
         return Ok(Vec::new());
     }
@@ -297,7 +392,14 @@ fn search_workspace(
         _ => None,
     };
     let mut results: Vec<SearchResult> = Vec::new();
-    'outer: for entry in WalkDir::new(&root).follow_links(false) {
+    let walker = WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| {
+            !(e.file_type().is_dir()
+                && is_ignored_dir(e.file_name().to_str().unwrap_or("")))
+        });
+    'outer: for entry in walker {
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,
@@ -306,11 +408,12 @@ fn search_workspace(
             continue;
         }
         let path = entry.path();
-        let rel = match path.strip_prefix(&root) {
+        let rel = match path.strip_prefix(root) {
             Ok(r) => r,
             Err(_) => continue,
         };
-        let rel_str = rel.to_string_lossy().to_string();
+        // glob patterns use '/'; normalize the Windows '\' rel path to match.
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
         if let Some(re) = &exclude_re {
             if re.is_match(&rel_str) {
                 continue;
@@ -423,7 +526,21 @@ fn write_file(path: String, content: String, state: State<'_, AppState>) -> Resu
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(&target, content).map_err(|e| e.to_string())
+    // Write to a sibling temp file then rename, so a crash / disk-full mid-write
+    // can't truncate the existing file to garbage. rename is atomic and replaces
+    // the destination on both Unix and Windows.
+    let tmp = target.with_extension(format!(
+        "{}.tmp",
+        target
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+    ));
+    fs::write(&tmp, content).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &target).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -497,20 +614,60 @@ struct CommandResult {
 /// expiry). The cwd confinement is the security boundary — the command string
 /// itself is intentionally unfiltered, since the agent needs execution
 /// flexibility within the open workspace.
-#[tauri::command(rename_all = "camelCase")]
-fn run_command(command: String, state: State<'_, AppState>) -> Result<CommandResult, String> {
-    let root = require_root(&state)?;
+/// Builds `cmd /C <command>` (Windows) or `sh -c <command>` (Unix). On Windows
+/// the whole `/C <command>` is passed with raw_arg so std does not re-quote it —
+/// preserving quotes/redirection the way a real shell prompt would.
+fn build_shell_command(command: &str) -> Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut b = Command::new("cmd");
+        b.raw_arg(format!("/C {command}"));
+        b
+    }
+    #[cfg(not(windows))]
+    {
+        let mut b = Command::new("sh");
+        b.arg("-c").arg(command);
+        b
+    }
+}
 
-    let (shell, flag): (&str, &str) = if cfg!(windows) { ("cmd", "/C") } else { ("sh", "-c") };
-    let mut child = Command::new(shell)
-        .arg(flag)
-        .arg(&command)
+/// Kills the child AND its descendants. Killing only the direct child (cmd.exe)
+/// leaves grandchildren (e.g. node) alive as zombies that also keep the output
+/// pipes open, hanging the reader threads.
+#[cfg(windows)]
+fn kill_process_tree(child: &mut std::process::Child) {
+    let pid = child.id().to_string();
+    let mut cmd = Command::new("taskkill");
+    cmd.args(["/PID", &pid, "/T", "/F"]);
+    no_window(&mut cmd);
+    let _ = cmd.output();
+    let _ = child.wait();
+}
+#[cfg(not(windows))]
+fn kill_process_tree(child: &mut std::process::Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn run_command(command: String, state: State<'_, AppState>) -> Result<CommandResult, String> {
+    let root = require_root(&state)?;
+    tokio::task::spawn_blocking(move || run_command_blocking(command, root))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn run_command_blocking(command: String, root: PathBuf) -> Result<CommandResult, String> {
+    let mut builder = build_shell_command(&command);
+    builder
         .current_dir(&root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| e.to_string())?;
+        .stderr(Stdio::piped());
+    no_window(&mut builder);
+    let mut child = builder.spawn().map_err(|e| e.to_string())?;
 
     // Drain stdout/stderr on helper threads so subprocess writes never block
     // on a full OS pipe buffer (~64KB on Linux) — that would deadlock wait().
@@ -567,10 +724,10 @@ fn run_command(command: String, state: State<'_, AppState>) -> Result<CommandRes
         }
         Ok(Err(e)) => Err(e.to_string()),
         Err(RecvTimeoutError::Timeout) => {
-            // Best-effort kill + reap so we don't leak a zombie process.
+            // Kill the whole process tree + reap so we don't leak zombies and
+            // so the output pipes close, letting the reader threads finish.
             if let Ok(mut guard) = child.lock() {
-                let _ = guard.kill();
-                let _ = guard.wait();
+                kill_process_tree(&mut guard);
             }
             // Join readers so the helper threads don't outlive the call.
             let _ = stdout_thread.join();
@@ -589,8 +746,15 @@ fn get_settings(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
         return Ok(None);
     }
     let text = fs::read_to_string(&file).map_err(|e| e.to_string())?;
-    let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    Ok(Some(value))
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => {
+            // A truncated/corrupt settings.json (e.g. crash mid-write) must not
+            // hard-fail the whole settings UI. Move it aside and start fresh.
+            let _ = fs::rename(&file, dir.join("settings.json.bak"));
+            Ok(None)
+        }
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -599,7 +763,14 @@ fn set_settings(app: AppHandle, settings: serde_json::Value) -> Result<(), Strin
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = dir.join("settings.json");
     let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    fs::write(&file, text).map_err(|e| e.to_string())
+    // Atomic replace: write temp then rename, so a crash can't leave a
+    // half-written settings.json that locks the user out on next launch.
+    let tmp = dir.join("settings.json.tmp");
+    fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &file).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
 }
 
 // --- Skills --------------------------------------------------------------
@@ -634,13 +805,8 @@ fn skill_install(
     src_path: String,
     name: String,
 ) -> Result<(), String> {
-    let trimmed_name = name.trim();
-    if trimmed_name.is_empty() {
-        return Err("skill name is empty".to_string());
-    }
-    if trimmed_name.contains('/') || trimmed_name.contains('\\') {
-        return Err("skill name must not contain path separators".to_string());
-    }
+    let trimmed_name = validate_skill_name(&name)?;
+    let trimmed_name = trimmed_name.as_str();
     let src = PathBuf::from(&src_path);
     let skill_md = if src.is_file() {
         if src.file_name().and_then(|s| s.to_str()) != Some("SKILL.md") {
@@ -697,6 +863,7 @@ fn skill_list(app: AppHandle) -> Result<Vec<String>, String> {
 
 #[tauri::command(rename_all = "camelCase")]
 fn skill_read(app: AppHandle, name: String) -> Result<String, String> {
+    let name = validate_skill_name(&name)?;
     let path = skills_root(&app)?.join(&name).join("SKILL.md");
     if !path.is_file() {
         return Err(format!("SKILL.md not found for \"{name}\""));
@@ -706,6 +873,7 @@ fn skill_read(app: AppHandle, name: String) -> Result<String, String> {
 
 #[tauri::command(rename_all = "camelCase")]
 fn skill_uninstall(app: AppHandle, name: String) -> Result<(), String> {
+    let name = validate_skill_name(&name)?;
     let path = skills_root(&app)?.join(&name);
     if !path.exists() {
         return Err(format!("skill \"{name}\" not found"));
@@ -747,13 +915,14 @@ async fn terminal_create(
     rows: u16,
     on_event: Channel<TerminalEvent>,
 ) -> Result<String, String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-        if cfg!(windows) {
-            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-        } else {
-            "/bin/bash".to_string()
-        }
-    });
+    // On Windows prefer COMSPEC and ignore SHELL: a POSIX SHELL value inherited
+    // from Git Bash/MSYS (e.g. /usr/bin/bash) is not a valid CreateProcess path
+    // and would make the terminal fail to spawn.
+    let shell = if cfg!(windows) {
+        std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+    } else {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    };
     let mut cmd = CommandBuilder::new(&shell);
     if let Some(c) = cwd.as_ref() {
         if !c.is_empty() {
@@ -937,14 +1106,19 @@ async fn proxy_request(
         req = req.body(b);
     }
 
-    let resp = match req.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = on_event.send(ProxyEvent::Error {
-                message: e.to_string(),
-            });
+    let resp = tokio::select! {
+        _ = token.cancelled() => {
+            let _ = on_event.send(ProxyEvent::Error { message: "aborted".to_string() });
             cleanup();
             return Ok(());
+        }
+        sent = req.send() => match sent {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = on_event.send(ProxyEvent::Error { message: e.to_string() });
+                cleanup();
+                return Ok(());
+            }
         }
     };
 
