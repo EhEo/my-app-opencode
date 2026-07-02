@@ -2079,7 +2079,7 @@ button {
   background: var(--bg-active-soft); color: var(--warn); font-size: 12px;
 }
 .pipeline-panel__error { padding: 6px 10px; color: var(--danger); font-size: 12px; }
-.pipeline-panel__stages { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.pipeline-panel__stages { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 8px 8px; }
 .pipeline-stage { border: 1px solid var(--border-subtle); border-radius: 4px; margin-bottom: 8px; }
 .pipeline-stage__head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
 .pipeline-stage__label { font-weight: 600; font-size: 13px; }
