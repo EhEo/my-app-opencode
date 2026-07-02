@@ -3,9 +3,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type * as monacoTypes from "monaco-editor";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { getLanguageId } from "../lib/language";
 import { ensureLanguageRegistered, monaco } from "../lib/monaco";
 import { openExternalUrl } from "./viewers/openExternally";
+import { baseMarkdownComponents } from "./markdownComponents";
+import { MarkdownImage } from "./MarkdownImage";
+import { resolveRelativePath } from "../lib/paths";
 
 export interface EditorFile {
   path: string;
@@ -43,28 +48,18 @@ function buildModelUri(path: string): monacoTypes.Uri {
   return monaco.Uri.parse("file:///" + encoded);
 }
 
-// Resolve a markdown link href (relative or absolute) against the directory of
-// the currently-open file, preserving `fromFile`'s separator style (Windows
-// uses backslashes). Any query/anchor suffix is stripped.
-function resolveRelativePath(fromFile: string, href: string): string {
-  const clean = href.replace(/[?#].*$/, "");
-  const isWin = fromFile.includes("\\");
-  const norm = fromFile.replace(/\\/g, "/");
-  const dir = norm.slice(0, norm.lastIndexOf("/"));
-  const combined = clean.startsWith("/") ? clean : `${dir}/${clean}`;
-  const out: string[] = [];
-  for (const part of combined.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") {
-      out.pop();
-      continue;
-    }
-    out.push(part);
-  }
-  let result = out.join("/");
-  if (combined.startsWith("/")) result = `/${result}`;
-  return isWin ? result.replace(/\//g, "\\") : result;
-}
+// Sanitize schema for the markdown preview: the defaults strip <script>, event
+// handlers, and javascript: URLs, but we re-allow `className` on code/span/pre
+// so ```lang fences keep the language-* class the code renderer reads.
+const previewSanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code ?? []), "className"],
+    span: [...(defaultSchema.attributes?.span ?? []), "className"],
+    pre: [...(defaultSchema.attributes?.pre ?? []), "className"],
+  },
+};
 
 export function EditorPane({
   file,
@@ -289,7 +284,9 @@ export function EditorPane({
           <div className="chat-md">
             <Markdown
               remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeRaw, [rehypeSanitize, previewSanitizeSchema]]}
               components={{
+                ...baseMarkdownComponents,
                 a: ({ href, children }) => (
                   <a
                     className="chat-md__a"
@@ -298,6 +295,13 @@ export function EditorPane({
                   >
                     {children}
                   </a>
+                ),
+                img: ({ src, alt }) => (
+                  <MarkdownImage
+                    src={typeof src === "string" ? src : undefined}
+                    alt={typeof alt === "string" ? alt : undefined}
+                    basePath={file?.path ?? null}
+                  />
                 ),
               }}
             >

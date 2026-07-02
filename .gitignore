@@ -25,6 +25,9 @@ cache/
 # superpowers 작업 진행 원장 — 스크래치, git 추적 안 함
 .superpowers/
 
+# Playwright MCP 산출물 (스냅샷·로그) — git 추적 안 함
+.playwright-mcp/
+
 # Node / Vite 빌드 산출물
 node_modules/
 dist/

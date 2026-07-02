@@ -17,6 +17,7 @@ import type { Settings } from "../lib/settings";
 import { getFileName } from "../lib/language";
 import { buildOpenFilesContext } from "../lib/openFiles";
 import { PipelinePanel } from "./PipelinePanel";
+import { baseMarkdownComponents } from "./markdownComponents";
 
 interface ChatPanelProps {
   workspaceRoot: string | null;
@@ -629,31 +630,7 @@ function MarkdownContent({
     return (
       <Markdown
         components={{
-          p: ({ children }) => <p className="chat-md__p">{children}</p>,
-          h1: ({ children }) => <h1 className="chat-md__h1">{children}</h1>,
-          h2: ({ children }) => <h2 className="chat-md__h2">{children}</h2>,
-          h3: ({ children }) => <h3 className="chat-md__h3">{children}</h3>,
-          h4: ({ children }) => <h4 className="chat-md__h4">{children}</h4>,
-          ul: ({ children }) => <ul className="chat-md__ul">{children}</ul>,
-          ol: ({ children }) => <ol className="chat-md__ol">{children}</ol>,
-          li: ({ children }) => <li className="chat-md__li">{children}</li>,
-          code: ({ className: cn, children, ...rest }) => {
-            const isBlock =
-              typeof cn === "string" && cn.includes("language-");
-            if (!isBlock) {
-              return (
-                <code className="chat-md__inline-code" {...rest}>
-                  {children}
-                </code>
-              );
-            }
-            return (
-              <code className="chat-md__code-block" {...rest}>
-                {children}
-              </code>
-            );
-          },
-          pre: ({ children }) => <pre className="chat-md__pre">{children}</pre>,
+          ...baseMarkdownComponents,
           a: ({ children, href }) => (
             <a
               className="chat-md__a"
@@ -664,16 +641,6 @@ function MarkdownContent({
               {children}
             </a>
           ),
-          blockquote: ({ children }) => (
-            <blockquote className="chat-md__blockquote">
-              {children}
-            </blockquote>
-          ),
-          strong: ({ children }) => (
-            <strong className="chat-md__strong">{children}</strong>
-          ),
-          em: ({ children }) => <em className="chat-md__em">{children}</em>,
-          hr: () => <hr className="chat-md__hr" />,
         }}
       >
         {text}
