@@ -1454,7 +1454,8 @@ button {
   color: var(--text-strong);
 }
 
-.settings-modal__body {
+.settings-modal__body,
+.settings-modal__mcp {
   display: flex;
   flex-direction: column;
   gap: 14px;
