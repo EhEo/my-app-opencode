@@ -448,12 +448,40 @@ button {
 
 /* ───────── Tabs ───────── */
 
+/* Merged tab + action row (replaces the separate top toolbar). */
+.editor-column__tabbar {
+  display: flex;
+  align-items: stretch;
+  background-color: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+}
+
+.editor-actions__divider {
+  width: 1px;
+  height: 16px;
+  background-color: var(--border-strong);
+  margin: 0 4px;
+}
+
+.toolbar__btn--icon {
+  padding: 0 7px;
+}
+
 .tabs {
   display: flex;
   align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 35px;
-  background-color: var(--bg-sidebar);
-  border-bottom: 1px solid var(--border-strong);
+  background-color: transparent;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
