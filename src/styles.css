@@ -493,7 +493,17 @@ button {
 }
 
 .tabs::-webkit-scrollbar {
-  height: 4px;
+  height: 3px;
+}
+.tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tabs::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+.tabs::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
 }
 
 .tab {
