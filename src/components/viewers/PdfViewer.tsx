@@ -9,6 +9,9 @@ export function PdfViewer({ path }: { path: string }): React.JSX.Element {
 
   useEffect(() => {
     let cancelled = false;
+    let worker: Worker | null = null;
+    let loadingTask: import("pdfjs-dist").PDFDocumentLoadingTask | null = null;
+    let doc: import("pdfjs-dist").PDFDocumentProxy | null = null;
     const container = containerRef.current;
     if (container === null) return;
     container.innerHTML = "";
@@ -21,8 +24,12 @@ export function PdfViewer({ path }: { path: string }): React.JSX.Element {
         const data = base64ToUint8Array(base64);
         const pdfjs = await import("pdfjs-dist");
         const WorkerMod = await import("pdfjs-dist/build/pdf.worker.min.mjs?worker");
-        pdfjs.GlobalWorkerOptions.workerPort = new WorkerMod.default();
-        const doc = await pdfjs.getDocument({ data }).promise;
+        if (cancelled) return;
+        worker = new WorkerMod.default();
+        pdfjs.GlobalWorkerOptions.workerPort = worker;
+        loadingTask = pdfjs.getDocument({ data });
+        doc = await loadingTask.promise;
+        if (cancelled) return;
         for (let n = 1; n <= doc.numPages; n++) {
           if (cancelled) return;
           const page = await doc.getPage(n);
@@ -44,7 +51,12 @@ export function PdfViewer({ path }: { path: string }): React.JSX.Element {
         }
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+      if (loadingTask !== null) void loadingTask.destroy();
+      if (worker !== null) worker.terminate();
+    };
   }, [path]);
 
   return (
