@@ -71,7 +71,25 @@ export interface ProviderStore {
   providers: Record<string, ProviderEntry>;
   mcp?: Record<string, McpServerEntry>;
   skills?: Record<string, { enabled: boolean }>;
+  /** Terminal shell command/path. Empty or undefined = platform default. */
+  terminalShell?: string;
 }
+
+// Shell presets offered in Settings. `command` is passed to the backend; an
+// empty command means "use the platform default".
+export interface ShellPreset {
+  id: string;
+  label: string;
+  command: string;
+}
+
+export const SHELL_PRESETS: ShellPreset[] = [
+  { id: "auto", label: "시스템 기본값 (Auto)", command: "" },
+  { id: "pwsh", label: "PowerShell 7 (pwsh)", command: "pwsh" },
+  { id: "powershell", label: "Windows PowerShell", command: "powershell" },
+  { id: "cmd", label: "명령 프롬프트 (cmd)", command: "cmd" },
+  { id: "bash", label: "Bash / Git Bash", command: "bash" },
+];
 
 export function emptyStore(): ProviderStore {
   return { activeProviderId: "zai-coding-plan", activeModel: "", providers: {} };

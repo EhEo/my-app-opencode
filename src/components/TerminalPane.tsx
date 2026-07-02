@@ -11,9 +11,10 @@ import {
 
 interface TerminalPaneProps {
   cwd: string | null;
+  shell?: string | null;
 }
 
-export function TerminalPane({ cwd }: TerminalPaneProps): React.JSX.Element {
+export function TerminalPane({ cwd, shell }: TerminalPaneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -96,7 +97,7 @@ export function TerminalPane({ cwd }: TerminalPaneProps): React.JSX.Element {
             sessionIdRef.current = null;
             term.write(`\r\n\x1b[2m[process exited with code ${code}]\x1b[0m\r\n`);
           },
-        });
+        }, shell);
         if (disposed) {
           void killSession(sid).catch(() => {});
           return;
@@ -153,7 +154,7 @@ export function TerminalPane({ cwd }: TerminalPaneProps): React.JSX.Element {
       }
       term.dispose();
     };
-  }, [cwd]);
+  }, [cwd, shell]);
 
   return <div ref={containerRef} className="terminal-pane" />;
 }

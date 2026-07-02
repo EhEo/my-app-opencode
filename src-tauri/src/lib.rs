@@ -913,15 +913,22 @@ async fn terminal_create(
     cwd: Option<String>,
     cols: u16,
     rows: u16,
+    shell: Option<String>,
     on_event: Channel<TerminalEvent>,
 ) -> Result<String, String> {
-    // On Windows prefer COMSPEC and ignore SHELL: a POSIX SHELL value inherited
-    // from Git Bash/MSYS (e.g. /usr/bin/bash) is not a valid CreateProcess path
-    // and would make the terminal fail to spawn.
-    let shell = if cfg!(windows) {
-        std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-    } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    // Use the user-chosen shell if set; otherwise fall back to the platform
+    // default. On Windows prefer COMSPEC and ignore SHELL — a POSIX SHELL value
+    // inherited from Git Bash/MSYS (e.g. /usr/bin/bash) is not a valid
+    // CreateProcess path and would make the terminal fail to spawn.
+    let shell = match shell {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => {
+            if cfg!(windows) {
+                std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+            } else {
+                std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+            }
+        }
     };
     let mut cmd = CommandBuilder::new(&shell);
     if let Some(c) = cwd.as_ref() {

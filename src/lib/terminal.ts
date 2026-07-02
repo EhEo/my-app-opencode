@@ -20,6 +20,7 @@ export async function createSession(
   cols: number,
   rows: number,
   handlers: TerminalHandlers,
+  shell?: string | null,
 ): Promise<string> {
   const channel = new Channel<TerminalEvent>();
   channel.onmessage = (msg: TerminalEvent): void => {
@@ -33,6 +34,7 @@ export async function createSession(
     cwd,
     cols,
     rows,
+    shell: shell ?? null,
     onEvent: channel,
   });
 }

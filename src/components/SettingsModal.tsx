@@ -6,6 +6,7 @@ import {
   resolveConnection,
   saveProviderStore,
   testConnection,
+  SHELL_PRESETS,
   type McpServerEntry,
   type ProviderEntry,
   type ProviderPreset,
@@ -49,7 +50,9 @@ export function SettingsModal({
   const [saving, setSaving] = useState(false);
   const [customModelsDraft, setCustomModelsDraft] = useState<string>("");
   const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
-  const [activeTab, setActiveTab] = useState<"ai" | "mcp" | "skills">("ai");
+  const [activeTab, setActiveTab] = useState<
+    "ai" | "mcp" | "skills" | "terminal"
+  >("ai");
 const [skillsInstalled, setSkillsInstalled] = useState<InstalledSkill[]>([]);
 
 const loadSkillsInstalled = useCallback(async (): Promise<void> => {
@@ -329,6 +332,15 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
           >
             Skills
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "terminal"}
+            className={`settings-modal__tab${activeTab === "terminal" ? " settings-modal__tab--active" : ""}`}
+            onClick={() => setActiveTab("terminal")}
+          >
+            터미널
+          </button>
         </div>
 
         {activeTab === "ai" ? (
@@ -554,6 +566,10 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
           />
         ) : null}
 
+        {activeTab === "terminal" ? (
+          <TerminalSection store={store} setStore={setStore} />
+        ) : null}
+
         <div className="settings-modal__footer">
           <button
             type="button"
@@ -738,6 +754,90 @@ function McpSection({ store, setStore, statuses }: McpSectionProps): React.JSX.E
           추가
         </button>
       </div>
+    </div>
+  );
+}
+
+interface TerminalSectionProps {
+  store: ProviderStore;
+  setStore: React.Dispatch<React.SetStateAction<ProviderStore>>;
+}
+
+function TerminalSection({
+  store,
+  setStore,
+}: TerminalSectionProps): React.JSX.Element {
+  const current = store.terminalShell ?? "";
+  const matched = SHELL_PRESETS.find((p) => p.command === current);
+  const [customMode, setCustomMode] = useState(
+    current !== "" && matched === undefined,
+  );
+  const [customText, setCustomText] = useState(
+    current !== "" && matched === undefined ? current : "",
+  );
+
+  const selectId = customMode ? "__custom__" : matched?.id ?? "auto";
+
+  const handleSelect = (id: string): void => {
+    if (id === "__custom__") {
+      setCustomMode(true);
+      setStore((s) => ({ ...s, terminalShell: customText.trim() }));
+      return;
+    }
+    setCustomMode(false);
+    const preset = SHELL_PRESETS.find((p) => p.id === id);
+    setStore((s) => ({ ...s, terminalShell: preset?.command ?? "" }));
+  };
+
+  const handleCustomChange = (value: string): void => {
+    setCustomText(value);
+    setStore((s) => ({ ...s, terminalShell: value.trim() }));
+  };
+
+  return (
+    <div className="settings-modal__body">
+      <div className="settings-modal__field">
+        <span className="settings-modal__label">터미널 셸</span>
+        <select
+          className="settings-modal__input settings-modal__select"
+          value={selectId}
+          onChange={(e) => handleSelect(e.target.value)}
+        >
+          {SHELL_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+          <option value="__custom__">사용자 지정 (경로 직접 입력)…</option>
+        </select>
+      </div>
+
+      {customMode ? (
+        <div className="settings-modal__field">
+          <span className="settings-modal__label">
+            셸 실행 파일 / 명령
+            <span className="settings-modal__scope-hint">
+              전체 경로 또는 PATH의 명령 이름
+            </span>
+          </span>
+          <input
+            type="text"
+            className="settings-modal__input"
+            placeholder={`예: C:\\Program Files\\PowerShell\\7\\pwsh.exe`}
+            value={customText}
+            onChange={(e) => handleCustomChange(e.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
+      ) : null}
+
+      <p className="settings-modal__hint">
+        새 터미널 세션에 사용할 셸입니다. PowerShell 7은 <code>pwsh</code>가 PATH에
+        있어야 합니다(표준 설치 시 자동 등록). 없으면 사용자 지정으로 전체 경로를
+        입력하세요. <strong>저장</strong>하면 현재 터미널이 새 셸로 다시 시작됩니다.
+        “시스템 기본값”은 Windows에서 <code>cmd</code>(COMSPEC)를 사용합니다.
+      </p>
     </div>
   );
 }

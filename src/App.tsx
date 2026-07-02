@@ -56,6 +56,7 @@ function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatVisible, setChatVisible] = useState(true);
   const [terminalVisible, setTerminalVisible] = useState(true);
+  const [terminalShell, setTerminalShell] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [diskConflict, setDiskConflict] = useState<Record<string, boolean>>({});
   const [gitStatuses, setGitStatuses] = useState<Record<string, string>>({});
@@ -88,9 +89,13 @@ function App(): React.JSX.Element {
         }
       }
       // Connect saved MCP servers at startup — previously they only connected
-      // after the user opened the settings modal once.
+      // after the user opened the settings modal once. Also load the terminal
+      // shell preference.
       try {
         const store = await loadProviderStore();
+        if (!cancelled) {
+          setTerminalShell(store.terminalShell ?? null);
+        }
         await applyMcpConfig(store.mcp);
       } catch {
         void 0;
@@ -367,6 +372,12 @@ function App(): React.JSX.Element {
         const msg = e instanceof Error ? e.message : String(e);
         void msg;
       }
+      try {
+        const store = await loadProviderStore();
+        setTerminalShell(store.terminalShell ?? null);
+      } catch {
+        void 0;
+      }
     })();
   }, []);
 
@@ -485,7 +496,7 @@ function App(): React.JSX.Element {
           className="app__bottom"
           style={{ display: terminalVisible ? undefined : "none" }}
         >
-          <TerminalPane cwd={rootPath} />
+          <TerminalPane cwd={rootPath} shell={terminalShell} />
         </div>
       </div>
       <SettingsModal
