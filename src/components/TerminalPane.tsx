@@ -12,14 +12,73 @@ import {
 interface TerminalPaneProps {
   cwd: string | null;
   shell?: string | null;
+  appTheme?: "dark" | "light";
 }
 
-export function TerminalPane({ cwd, shell }: TerminalPaneProps): React.JSX.Element {
+const DARK_THEME = {
+  background: "#1e1e1e",
+  foreground: "#d4d4d4",
+  cursor: "#aeafad",
+  cursorAccent: "#1e1e1e",
+  selectionBackground: "#264f78",
+  black: "#1e1e1e",
+  red: "#f48771",
+  green: "#7cb342",
+  yellow: "#cca700",
+  blue: "#4fc3f7",
+  magenta: "#c586c0",
+  cyan: "#4ec9b0",
+  white: "#d4d4d4",
+  brightBlack: "#858585",
+  brightRed: "#f48771",
+  brightGreen: "#7cb342",
+  brightYellow: "#cca700",
+  brightBlue: "#4fc3f7",
+  brightMagenta: "#c586c0",
+  brightCyan: "#4ec9b0",
+  brightWhite: "#ffffff",
+};
+
+const LIGHT_THEME = {
+  background: "#ffffff",
+  foreground: "#333333",
+  cursor: "#333333",
+  cursorAccent: "#ffffff",
+  selectionBackground: "#add6ff",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#107c10",
+  yellow: "#949800",
+  blue: "#0451a5",
+  magenta: "#bc05bc",
+  cyan: "#0598bc",
+  white: "#555555",
+  brightBlack: "#666666",
+  brightRed: "#cd3131",
+  brightGreen: "#14ce14",
+  brightYellow: "#b5ba00",
+  brightBlue: "#0451a5",
+  brightMagenta: "#bc05bc",
+  brightCyan: "#0598bc",
+  brightWhite: "#a5a5a5",
+};
+
+export function TerminalPane({ cwd, shell, appTheme }: TerminalPaneProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const onDataUnsubRef = useRef<{ dispose: () => void } | null>(null);
+  // Theme is applied via term.options (not an init-effect dep) so switching
+  // themes never restarts the shell session.
+  const appThemeRef = useRef(appTheme ?? "dark");
+  appThemeRef.current = appTheme ?? "dark";
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (term === null) return;
+    term.options.theme = appTheme === "light" ? LIGHT_THEME : DARK_THEME;
+  }, [appTheme]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -32,29 +91,7 @@ export function TerminalPane({ cwd, shell }: TerminalPaneProps): React.JSX.Eleme
       cursorBlink: true,
       scrollback: 5000,
       convertEol: true,
-      theme: {
-        background: "#1e1e1e",
-        foreground: "#d4d4d4",
-        cursor: "#aeafad",
-        cursorAccent: "#1e1e1e",
-        selectionBackground: "#264f78",
-        black: "#1e1e1e",
-        red: "#f48771",
-        green: "#7cb342",
-        yellow: "#cca700",
-        blue: "#4fc3f7",
-        magenta: "#c586c0",
-        cyan: "#4ec9b0",
-        white: "#d4d4d4",
-        brightBlack: "#858585",
-        brightRed: "#f48771",
-        brightGreen: "#7cb342",
-        brightYellow: "#cca700",
-        brightBlue: "#4fc3f7",
-        brightMagenta: "#c586c0",
-        brightCyan: "#4ec9b0",
-        brightWhite: "#ffffff",
-      },
+      theme: appThemeRef.current === "light" ? LIGHT_THEME : DARK_THEME,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

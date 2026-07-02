@@ -39,6 +39,27 @@ monaco.editor.defineTheme("opencode-dark", {
   },
 });
 
+monaco.editor.defineTheme("opencode-light", {
+  base: "vs",
+  inherit: true,
+  rules: [],
+  colors: {
+    "editor.background": "#ffffff",
+    "editor.foreground": "#1f1f1f",
+    "editorLineNumber.foreground": "#8a8a8a",
+    "editorLineNumber.activeForeground": "#1f1f1f",
+    "editorCursor.foreground": "#1f1f1f",
+    "editor.lineHighlightBackground": "#f5f5f5",
+    "editor.selectionBackground": "#add6ff",
+    "editor.inactiveSelectionBackground": "#e5ebf1",
+    "editorIndentGuide.background": "#d3d3d3",
+    "editorIndentGuide.activeBackground": "#939393",
+    "editorWhitespace.foreground": "#d3d3d3",
+    "editorBracketMatch.background": "#e8e8e8",
+    "editorBracketMatch.border": "#b9b9b9",
+  },
+});
+
 const LANGUAGE_CONTRIBUTIONS: Record<string, () => Promise<unknown>> = {
   typescript: () =>
     import("monaco-editor/esm/vs/language/typescript/monaco.contribution"),

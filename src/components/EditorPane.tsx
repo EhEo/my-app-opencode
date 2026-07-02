@@ -25,6 +25,7 @@ export interface CursorPosition {
 
 interface EditorPaneProps {
   file: EditorFile | null;
+  themeName?: string;
   onChange: (value: string) => void;
   onCursorChange?: (position: CursorPosition) => void;
   onOpenPath?: (absPath: string) => void;
@@ -64,6 +65,7 @@ const previewSanitizeSchema = {
 
 export function EditorPane({
   file,
+  themeName,
   onChange,
   onCursorChange,
   onOpenPath,
@@ -254,7 +256,7 @@ export function EditorPane({
       <Editor
         height="100%"
         width="100%"
-        theme="opencode-dark"
+        theme={themeName ?? "opencode-dark"}
         onMount={handleMount}
         onChange={handleChange}
         options={{

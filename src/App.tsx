@@ -19,6 +19,14 @@ import { loadSettings, loadProviderStore, type Settings } from "./lib/settings";
 import { applyConfig as applyMcpConfig } from "./lib/mcp";
 import { fileKind } from "./lib/fileKind";
 import { DocViewer } from "./components/viewers/DocViewer";
+import {
+  applyTheme,
+  loadThemeMode,
+  resolveTheme,
+  saveThemeMode,
+  systemPrefersDark,
+  type ThemeMode,
+} from "./lib/theme";
 
 interface TabState {
   content: string;
@@ -65,6 +73,29 @@ function App(): React.JSX.Element {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [cursor, setCursor] = useState<CursorPosition | null>(null);
   const [wrapEnabled, setWrapEnabled] = useState(false);
+
+  // Theme: dark / light / system (system follows the OS via matchMedia).
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
+  const [systemDark, setSystemDark] = useState<boolean>(() =>
+    systemPrefersDark(),
+  );
+  const effectiveTheme = resolveTheme(themeMode, systemDark);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent): void => setSystemDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    applyTheme(effectiveTheme);
+  }, [effectiveTheme]);
+
+  const handleThemeModeChange = useCallback((mode: ThemeMode): void => {
+    setThemeMode(mode);
+    saveThemeMode(mode);
+  }, []);
 
   // Resizable split sizes: file tree / chat panel widths, terminal height.
   const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
@@ -556,6 +587,9 @@ function App(): React.JSX.Element {
             <div className="editor-column__body">
               <EditorPane
                 file={activeFile}
+                themeName={
+                  effectiveTheme === "light" ? "opencode-light" : "opencode-dark"
+                }
                 onChange={handleEditorChange}
                 onCursorChange={handleCursorChange}
                 onOpenPath={(p) => {
@@ -651,13 +685,15 @@ function App(): React.JSX.Element {
             height: terminalHeight,
           }}
         >
-          <TerminalPane cwd={rootPath} shell={terminalShell} />
+          <TerminalPane cwd={rootPath} shell={terminalShell} appTheme={effectiveTheme} />
         </div>
       </div>
       <SettingsModal
         open={settingsOpen}
         onSaved={handleSettingsSaved}
         onClose={handleCloseSettings}
+        themeMode={themeMode}
+        onThemeModeChange={handleThemeModeChange}
       />
       <SearchModal
         open={searchOpen}

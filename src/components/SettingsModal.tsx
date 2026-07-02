@@ -29,10 +29,14 @@ import {
   type InstalledSkill,
 } from "../lib/skills";
 
+import type { ThemeMode } from "../lib/theme";
+
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
 }
 
 type TestState =
@@ -45,6 +49,8 @@ export function SettingsModal({
   open,
   onClose,
   onSaved,
+  themeMode,
+  onThemeModeChange,
 }: SettingsModalProps): React.JSX.Element | null {
   const [store, setStore] = useState<ProviderStore>(() => emptyStore());
   const [loaded, setLoaded] = useState(false);
@@ -54,7 +60,7 @@ export function SettingsModal({
   const [customModelsDraft, setCustomModelsDraft] = useState<string>("");
   const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
   const [activeTab, setActiveTab] = useState<
-    "ai" | "mcp" | "skills" | "terminal" | "agents"
+    "ai" | "mcp" | "skills" | "terminal" | "agents" | "display"
   >("ai");
 const [skillsInstalled, setSkillsInstalled] = useState<InstalledSkill[]>([]);
 
@@ -353,6 +359,15 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
           >
             Agents
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "display"}
+            className={`settings-modal__tab${activeTab === "display" ? " settings-modal__tab--active" : ""}`}
+            onClick={() => setActiveTab("display")}
+          >
+            화면
+          </button>
         </div>
 
         {activeTab === "ai" ? (
@@ -584,6 +599,35 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
 
         {activeTab === "agents" ? (
           <AgentsSection store={store} setStore={setStore} />
+        ) : null}
+
+        {activeTab === "display" ? (
+          <div className="settings-modal__body">
+            <h3 className="settings-modal__section-title">테마</h3>
+            <p className="settings-modal__hint">
+              적용은 즉시 반영되며 저장 버튼과 무관하게 유지됩니다.
+            </p>
+            <div className="settings-modal__theme-options">
+              {(
+                [
+                  { value: "dark", label: "다크" },
+                  { value: "light", label: "라이트" },
+                  { value: "system", label: "시스템 설정 따르기" },
+                ] as const
+              ).map((opt) => (
+                <label key={opt.value} className="settings-modal__theme-option">
+                  <input
+                    type="radio"
+                    name="theme-mode"
+                    value={opt.value}
+                    checked={themeMode === opt.value}
+                    onChange={() => onThemeModeChange(opt.value)}
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         ) : null}
 
         <div className="settings-modal__footer">
