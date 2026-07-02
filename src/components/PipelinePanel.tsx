@@ -9,6 +9,7 @@ import { runPipeline, type StageResult } from "../lib/pipeline";
 import { makePipelineDeps } from "../lib/pipelineDeps";
 import { guardState } from "../lib/usage";
 import { SessionUsage, estimateTokens, type UsageSnapshot } from "../lib/usageSession";
+import { buildOpenFilesContext } from "../lib/openFiles";
 import { UsageStrip } from "./UsageStrip";
 
 type StageView = {
@@ -34,8 +35,12 @@ function initialStages(store: ProviderStore | null): StageView[] {
 
 export function PipelinePanel({
   workspaceRoot,
+  activeFilePath,
+  openFilePaths,
 }: {
   workspaceRoot: string | null;
+  activeFilePath: string | null;
+  openFilePaths: string[];
 }): React.JSX.Element {
   const [store, setStore] = useState<ProviderStore | null>(null);
   const [input, setInput] = useState("");
@@ -120,9 +125,13 @@ export function PipelinePanel({
       enabled: true,
     }));
 
+    // Give every stage the same open-files context the chat panel provides, so
+    // "the open file" / "this file" resolves and the agent knows what's open.
+    const openCtx = buildOpenFilesContext(workspaceRoot, activeFilePath, openFilePaths);
+
     try {
       await runPipeline({
-        request: input.trim(),
+        request: input.trim() + openCtx,
         stages: stageConfigs,
         workers: store.workers,
         deps: makePipelineDeps(store),
@@ -158,7 +167,17 @@ export function PipelinePanel({
       setGuardPrompt(null);
       void refreshUsage();
     }
-  }, [store, running, input, stages, patchStage, refreshUsage]);
+  }, [
+    store,
+    running,
+    input,
+    stages,
+    patchStage,
+    refreshUsage,
+    workspaceRoot,
+    activeFilePath,
+    openFilePaths,
+  ]);
 
   const handleStop = useCallback((): void => {
     abortRef.current?.abort();
