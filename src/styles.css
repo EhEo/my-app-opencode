@@ -2044,3 +2044,14 @@ button {
 }
 .chat-panel__mode-btn--active { background: var(--bg-active-soft); color: var(--text-strong); }
 
+
+.doc-viewer__loading, .doc-viewer__error, .doc-viewer__unsupported {
+  padding: 16px; color: var(--text-muted); font-size: 13px;
+}
+.doc-viewer__error { color: var(--danger); white-space: pre-wrap; }
+.doc-viewer__unsupported { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.doc-viewer__image-wrap { width: 100%; height: 100%; overflow: auto; display: flex; align-items: center; justify-content: center; background: var(--bg-editor); }
+.doc-viewer__image { max-width: 100%; max-height: 100%; object-fit: contain; }
+.doc-viewer__pdf { width: 100%; height: 100%; overflow: auto; background: #2a2a2a; }
+.doc-viewer__pdf-pages { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; }
+.doc-viewer__pdf-page { max-width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.4); background: #fff; }
