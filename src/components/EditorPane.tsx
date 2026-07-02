@@ -110,8 +110,9 @@ export function EditorPane({
     }
 
     const prevPath = activePathRef.current;
+    const pathChanged = prevPath !== file.path;
 
-    if (prevPath !== null && prevPath !== file.path) {
+    if (prevPath !== null && pathChanged) {
       viewStatesRef.current.set(prevPath, editor.saveViewState());
     }
 
@@ -141,14 +142,19 @@ export function EditorPane({
       settingModelRef.current = false;
     }
 
-    const stored = viewStatesRef.current.get(file.path);
-    if (stored !== undefined) {
-      editor.restoreViewState(stored);
+    // Only restore view state and steal focus when switching to a different
+    // file. Re-running on unrelated App re-renders (git polling, mtime watch)
+    // must NOT refocus the editor — that was stealing focus from the chat input.
+    if (pathChanged) {
+      const stored = viewStatesRef.current.get(file.path);
+      if (stored !== undefined) {
+        editor.restoreViewState(stored);
+      }
+      editor.focus();
     }
-    editor.focus();
 
     activePathRef.current = file.path;
-  }, [file, mounted]);
+  }, [file?.path, file?.content, mounted]);
 
   useEffect(() => {
     wrapEnabledRef.current = wrapEnabled;

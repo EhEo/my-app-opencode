@@ -21,6 +21,40 @@ interface ChatPanelProps {
   settings: Settings | null;
   onOpenSettings: () => void;
   onFileChanged: (path: string) => void;
+  activeFilePath: string | null;
+  openFilePaths: string[];
+}
+
+// Tells the agent which files are open so "modify this file" / "the open file"
+// resolves to a concrete workspace-relative path it can read_file.
+function buildOpenFilesContext(
+  root: string | null,
+  active: string | null,
+  open: string[],
+): string {
+  if (root === null || open.length === 0) return "";
+  const nr = root.replace(/\\/g, "/").replace(/\/+$/, "");
+  const toRel = (abs: string): string => {
+    const na = abs.replace(/\\/g, "/");
+    return na.toLowerCase().startsWith(nr.toLowerCase() + "/")
+      ? na.slice(nr.length + 1)
+      : na;
+  };
+  const lines = open.map((p) => {
+    const rel = toRel(p);
+    return p === active
+      ? `- ${rel}  (ACTIVE — the file the user is currently viewing)`
+      : `- ${rel}`;
+  });
+  return (
+    "\n\nThe user currently has these files open in the editor " +
+    "(workspace-relative paths):\n" +
+    lines.join("\n") +
+    '\n\nWhen the user says "this file", "the open file", "the current file", ' +
+    'or "the file I\'m looking at" without naming a path, they mean the ACTIVE ' +
+    "file above. Use the read_file tool to read it before editing. Note that " +
+    "read_file returns the last saved version on disk, not unsaved editor edits."
+  );
 }
 
 type UiToolCardStatus = "running" | "ok" | "error";
@@ -56,6 +90,8 @@ export function ChatPanel({
   settings,
   onOpenSettings,
   onFileChanged,
+  activeFilePath,
+  openFilePaths,
 }: ChatPanelProps): React.JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [uiItems, setUiItems] = useState<UiItem[]>([]);
@@ -239,7 +275,9 @@ export function ChatPanel({
     try {
       await runAgent({
         settings,
-        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        systemPrompt:
+          DEFAULT_SYSTEM_PROMPT +
+          buildOpenFilesContext(workspaceRoot, activeFilePath, openFilePaths),
         messages: history,
         callbacks: {
           onToken: (delta) => updateStreamingAssistant(delta),
@@ -297,6 +335,8 @@ export function ChatPanel({
     addErrorMessage,
     onFileChanged,
     onOpenSettings,
+    activeFilePath,
+    openFilePaths,
   ]);
 
   const handleStop = useCallback((): void => {

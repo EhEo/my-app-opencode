@@ -483,6 +483,8 @@ function App(): React.JSX.Element {
               workspaceRoot={rootPath}
               settings={settings}
               onOpenSettings={handleOpenSettings}
+              activeFilePath={activePath}
+              openFilePaths={openTabs.map((t) => t.path)}
               onFileChanged={(p) => {
                 void handleFileChanged(p);
                 setFileTreeRefresh((n) => n + 1);
