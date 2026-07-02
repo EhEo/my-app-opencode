@@ -23,66 +23,86 @@ export function Toolbar({
   onToggleTerminal,
   terminalVisible,
 }: ToolbarProps): React.JSX.Element {
-  // Compact action bar, rendered inline at the right of the tab row so it no
-  // longer needs a dedicated toolbar row (reclaims vertical space for editing).
-  void fileName;
   return (
-    <div className="editor-actions">
-      <button
-        type="button"
-        className="toolbar__btn toolbar__btn--icon"
-        onClick={onOpenFolder}
-        title="Open a local folder"
-        aria-label="Open folder"
-      >
-        <FolderOpenIcon />
-      </button>
-      <button
-        type="button"
-        className="toolbar__btn toolbar__btn--icon"
-        onClick={onSave}
-        disabled={!canSave}
-        title="Save (Ctrl+S / Cmd+S)"
-        aria-label="Save"
-      >
-        <SaveIcon />
-        {dirty && canSave ? (
-          <span className="toolbar__dirty-dot" aria-label="Unsaved changes" />
-        ) : null}
-      </button>
-      <span className="editor-actions__divider" aria-hidden="true" />
-      <button
-        type="button"
-        className={"toolbar__btn" + (chatVisible ? " toolbar__btn--active" : "")}
-        onClick={onToggleChat}
-        title={chatVisible ? "Hide chat panel" : "Show chat panel"}
-        aria-pressed={chatVisible}
-      >
-        <ChatIcon />
-        <span>Chat</span>
-      </button>
-      <button
-        type="button"
-        className={
-          "toolbar__btn" + (terminalVisible ? " toolbar__btn--active" : "")
-        }
-        onClick={onToggleTerminal}
-        title={terminalVisible ? "Hide terminal" : "Show terminal"}
-        aria-pressed={terminalVisible}
-      >
-        <TerminalIcon />
-        <span>Terminal</span>
-      </button>
-      <button
-        type="button"
-        className="toolbar__btn toolbar__btn--icon"
-        onClick={onOpenSettings}
-        title="Settings"
-        aria-label="Settings"
-      >
-        <GearIcon />
-      </button>
-    </div>
+    <header className="toolbar">
+      <div className="toolbar__left">
+        <button
+          type="button"
+          className="toolbar__btn toolbar__btn--primary"
+          onClick={onOpenFolder}
+          title="Open a local folder"
+        >
+          <FolderOpenIcon />
+          <span>Open Folder</span>
+        </button>
+        <button
+          type="button"
+          className="toolbar__btn"
+          onClick={onSave}
+          disabled={!canSave}
+          title="Save (Ctrl+S / Cmd+S)"
+        >
+          <SaveIcon />
+          <span>Save</span>
+          {dirty && canSave ? (
+            <span className="toolbar__dirty-dot" aria-label="Unsaved changes" />
+          ) : null}
+        </button>
+      </div>
+      <div className="toolbar__center">
+        <span className="toolbar__file">
+          {dirty && canSave ? (
+            <span className="toolbar__dirty-mark" aria-hidden="true">
+              ●
+            </span>
+          ) : null}
+          <span className="toolbar__file-name">
+            {fileName ?? "opencode-desktop"}
+          </span>
+          {dirty && canSave ? (
+            <span className="toolbar__dirty-suffix">— modified</span>
+          ) : null}
+        </span>
+      </div>
+      <div className="toolbar__right">
+        <button
+          type="button"
+          className={
+            "toolbar__btn" +
+            (chatVisible ? " toolbar__btn--active" : "")
+          }
+          onClick={onToggleChat}
+          title={chatVisible ? "Hide chat panel" : "Show chat panel"}
+          aria-pressed={chatVisible}
+        >
+          <ChatIcon />
+          <span>Chat</span>
+        </button>
+        <button
+          type="button"
+          className={
+            "toolbar__btn" +
+            (terminalVisible ? " toolbar__btn--active" : "")
+          }
+          onClick={onToggleTerminal}
+          title={terminalVisible ? "Hide terminal" : "Show terminal"}
+          aria-pressed={terminalVisible}
+        >
+          <TerminalIcon />
+          <span>Terminal</span>
+        </button>
+        <button
+          type="button"
+          className="toolbar__btn"
+          onClick={onOpenSettings}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <GearIcon />
+        </button>
+        <span className="toolbar__brand">opencode</span>
+      </div>
+    </header>
   );
 }
 

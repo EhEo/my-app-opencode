@@ -409,6 +409,22 @@ function App(): React.JSX.Element {
 
   return (
     <div className="app">
+      <Toolbar
+        onOpenFolder={() => {
+          void handleOpenFolder();
+        }}
+        onSave={() => {
+          void handleSave();
+        }}
+        dirty={activeDirty}
+        fileName={activeFileName}
+        canSave={activeFile !== null}
+        onOpenSettings={handleOpenSettings}
+        onToggleChat={handleToggleChat}
+        chatVisible={chatVisible}
+        onToggleTerminal={() => setTerminalVisible((v) => !v)}
+        terminalVisible={terminalVisible}
+      />
       <div className="app__body">
         <div className="app__main">
           <FileTree
@@ -421,30 +437,12 @@ function App(): React.JSX.Element {
             refreshToken={fileTreeRefresh}
           />
           <div className="editor-column">
-            <div className="editor-column__tabbar">
-              <Tabs
-                tabs={openTabs}
-                activePath={activePath}
-                onSelect={handleSelectTab}
-                onClose={handleCloseTab}
-              />
-              <Toolbar
-                onOpenFolder={() => {
-                  void handleOpenFolder();
-                }}
-                onSave={() => {
-                  void handleSave();
-                }}
-                dirty={activeDirty}
-                fileName={activeFileName}
-                canSave={activeFile !== null}
-                onOpenSettings={handleOpenSettings}
-                onToggleChat={handleToggleChat}
-                chatVisible={chatVisible}
-                onToggleTerminal={() => setTerminalVisible((v) => !v)}
-                terminalVisible={terminalVisible}
-              />
-            </div>
+            <Tabs
+              tabs={openTabs}
+              activePath={activePath}
+              onSelect={handleSelectTab}
+              onClose={handleCloseTab}
+            />
             <div className="editor-column__body">
               <EditorPane
                 file={activeFile}
