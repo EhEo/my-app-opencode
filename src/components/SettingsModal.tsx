@@ -925,11 +925,36 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
     });
   };
 
-  const setStageBackend = (stageId: string, backendId: string): void => {
-    const nextStages = stages.map((st) =>
-      st.id === stageId ? { ...st, backendId: backendId === "" ? undefined : backendId } : st,
-    );
+  const updateStage = (id: string, patch: Partial<StageConfig>): void => {
+    const nextStages = stages.map((st) => (st.id === id ? { ...st, ...patch } : st));
     setStore((s) => ({ ...s, pipeline: { stages: nextStages } }));
+  };
+
+  const removeStage = (id: string): void => {
+    const nextStages = stages.filter((st) => st.id !== id);
+    setStore((s) => ({ ...s, pipeline: { stages: nextStages } }));
+  };
+
+  const moveStage = (id: string, direction: -1 | 1): void => {
+    const idx = stages.findIndex((st) => st.id === id);
+    if (idx === -1) return;
+    const swapWith = idx + direction;
+    if (swapWith < 0 || swapWith >= stages.length) return;
+    const nextStages = stages.slice();
+    const tmp = nextStages[idx];
+    nextStages[idx] = nextStages[swapWith];
+    nextStages[swapWith] = tmp;
+    setStore((s) => ({ ...s, pipeline: { stages: nextStages } }));
+  };
+
+  const addStage = (): void => {
+    const newStage: StageConfig = {
+      id: crypto.randomUUID(),
+      label: "새 단계",
+      prompt: "",
+      enabled: true,
+    };
+    setStore((s) => ({ ...s, pipeline: { stages: [...stages, newStage] } }));
   };
 
   const patchGuard = (patch: Partial<NonNullable<ProviderStore["usageGuard"]>>): void => {
@@ -1079,33 +1104,97 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
         </button>
       </div>
 
-      <h3 className="settings-modal__section-title">파이프라인 단계 기본 백엔드</h3>
-      {stages.map((st) => (
-        <div key={st.id} className="settings-modal__field">
-          <span className="settings-modal__label">{st.label}</span>
-          <select
-            className="settings-modal__input settings-modal__select"
-            value={st.backendId ?? ""}
-            onChange={(e) => setStageBackend(st.id, e.target.value)}
-          >
-            <option value="">기본 (인앱 AI)</option>
-            {workerIds.map((id) => {
-              const w = workers[id];
-              const label =
-                w.kind === "cli"
-                  ? `${id} (CLI: ${w.command})`
-                  : w.kind === "inapp"
-                    ? `${id} (${findPreset(store, w.providerId)?.label ?? w.providerId} · ${w.model ?? ""})`
-                    : id;
-              return (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-      ))}
+      <h3 className="settings-modal__section-title">파이프라인 단계</h3>
+      <p className="settings-modal__hint">
+        단계를 자유롭게 추가·삭제·순서 변경할 수 있습니다. 각 단계는 자신의 업무 지시문 +
+        요청 + 이전 모든 단계의 결과를 받아 실행됩니다.
+      </p>
+      <ul className="settings-modal__stage-list">
+        {stages.map((st, idx) => (
+          <li key={st.id} className="settings-modal__stage-item">
+            <div className="settings-modal__mcp-row1">
+              <input
+                className="settings-modal__input settings-modal__stage-label"
+                placeholder="단계 이름"
+                value={st.label}
+                onChange={(e) => updateStage(st.id, { label: e.target.value })}
+              />
+              <label className="settings-modal__mcp-toggle">
+                <input
+                  type="checkbox"
+                  checked={st.enabled}
+                  onChange={(e) => updateStage(st.id, { enabled: e.target.checked })}
+                />
+                <span>활성화</span>
+              </label>
+              <button
+                type="button"
+                className="settings-modal__btn settings-modal__btn--small"
+                onClick={() => moveStage(st.id, -1)}
+                disabled={idx === 0}
+                title="위로 이동"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="settings-modal__btn settings-modal__btn--small"
+                onClick={() => moveStage(st.id, 1)}
+                disabled={idx === stages.length - 1}
+                title="아래로 이동"
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                className="settings-modal__btn settings-modal__btn--small settings-modal__btn--danger"
+                onClick={() => removeStage(st.id)}
+              >
+                삭제
+              </button>
+            </div>
+            <textarea
+              className="settings-modal__input settings-modal__stage-prompt"
+              placeholder="이 단계의 업무 지시문 (예: 요청을 분석해 단계별 계획을 작성하세요)"
+              rows={2}
+              value={st.prompt ?? ""}
+              onChange={(e) => updateStage(st.id, { prompt: e.target.value })}
+            />
+            <select
+              className="settings-modal__input settings-modal__select"
+              value={st.backendId ?? ""}
+              onChange={(e) =>
+                updateStage(st.id, {
+                  backendId: e.target.value === "" ? undefined : e.target.value,
+                })
+              }
+            >
+              <option value="">기본 (인앱 AI)</option>
+              {workerIds.map((id) => {
+                const w = workers[id];
+                const label =
+                  w.kind === "cli"
+                    ? `${id} (CLI: ${w.command})`
+                    : w.kind === "inapp"
+                      ? `${id} (${findPreset(store, w.providerId)?.label ?? w.providerId} · ${w.model ?? ""})`
+                      : id;
+                return (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                );
+              })}
+            </select>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="settings-modal__btn settings-modal__btn--small"
+        onClick={addStage}
+      >
+        + 단계 추가
+      </button>
 
       <h3 className="settings-modal__section-title">사용량 가드</h3>
       <label className="settings-modal__mcp-toggle">

@@ -2286,3 +2286,37 @@ button {
 .editor-pane__preview-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 
 .editor-column__viewer { position: absolute; inset: 0; z-index: 4; background: var(--bg-editor); }
+
+/* ───────── Pipeline stage config (Settings → Agents) ───────── */
+
+.settings-modal__stage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-modal__stage-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+.settings-modal__stage-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-modal__stage-prompt {
+  height: auto;
+  min-height: 44px;
+  padding: 8px 10px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.4;
+}
