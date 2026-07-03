@@ -1690,6 +1690,139 @@ button {
   overflow-y: auto;
 }
 
+.settings-modal__section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.settings-modal__mcp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-modal__mcp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-modal__mcp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background-color: var(--bg-editor);
+}
+
+/* Shared control row: name/label + badge + toggle + action buttons.
+   align-items keeps every 30px control on the same centerline. Reused by
+   the pipeline stage rows. */
+.settings-modal__mcp-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-modal__mcp-row2 {
+  display: flex;
+  min-width: 0;
+}
+
+.settings-modal__mcp-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-modal__mcp-url {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.settings-modal__mcp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-modal__mcp-toggle input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.settings-modal__mcp-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.settings-modal__mcp-badge--connected {
+  color: var(--chat-success);
+  border-color: var(--chat-success);
+}
+
+.settings-modal__mcp-badge--connecting {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.settings-modal__mcp-badge--error {
+  color: var(--chat-danger);
+  border-color: var(--chat-danger);
+}
+
+.settings-modal__mcp-error {
+  font-size: 12px;
+  color: var(--chat-danger);
+}
+
+.settings-modal__mcp-tools {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Add-forms (MCP server, provider, model, skill): stacked inputs with a clear
+   gap and a separator so the add button no longer abuts the fields. */
+.settings-modal__mcp-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-strong);
+}
+
+.settings-modal__mcp-add .settings-modal__btn {
+  align-self: flex-start;
+}
+
 .settings-modal__field {
   display: flex;
   flex-direction: column;
@@ -1854,6 +1987,24 @@ button {
 
 .settings-modal__btn--ghost {
   background-color: transparent;
+}
+
+/* Compact buttons keep the same 30px height as inputs and other buttons —
+   only the horizontal padding shrinks. */
+.settings-modal__btn--small {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.settings-modal__btn--danger {
+  color: var(--chat-danger);
+}
+
+.settings-modal__btn--danger:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+  color: var(--chat-danger);
+  border-color: var(--chat-danger);
 }
 
 .settings-modal__card--wide {
