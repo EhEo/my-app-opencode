@@ -11,9 +11,25 @@ export const DEFAULT_INAPP_BACKEND: WorkerBackend = {
 };
 
 export const DEFAULT_STAGES: StageConfig[] = [
-  { id: "plan", label: "Plan", enabled: true },
-  { id: "code", label: "Code", enabled: true },
-  { id: "review", label: "Review", enabled: true },
+  {
+    id: "plan",
+    label: "Plan",
+    enabled: true,
+    prompt: "You are the PLAN stage. Produce a concise step-by-step plan. Do not write files.",
+  },
+  {
+    id: "code",
+    label: "Code",
+    enabled: true,
+    prompt: "You are the CODE stage. Implement the plan. Use tools to read and write files.",
+  },
+  {
+    id: "review",
+    label: "Review",
+    enabled: true,
+    prompt:
+      "You are the REVIEW stage. Read the changes and report issues. Read-only — do not modify files.",
+  },
 ];
 
 export function resolveBackend(

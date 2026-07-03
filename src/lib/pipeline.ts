@@ -30,19 +30,12 @@ export interface PipelineCallbacks {
   onGuardPause?: (stageId: string) => Promise<boolean>;
 }
 
-const STAGE_PROMPTS: Record<string, string> = {
-  plan: "You are the PLAN stage. Produce a concise step-by-step plan. Do not write files.",
-  code: "You are the CODE stage. Implement the plan. Use tools to read and write files.",
-  review:
-    "You are the REVIEW stage. Read the changes and report issues. Read-only — do not modify files.",
-};
-
 export function buildBrief(
   request: string,
   stage: StageConfig,
   prior: StageResult[],
 ): string {
-  const parts: string[] = [STAGE_PROMPTS[stage.id] ?? "", `# Request\n${request}`];
+  const parts: string[] = [stage.prompt ?? "", `# Request\n${request}`];
   for (const p of prior) {
     parts.push(`# ${p.label} output\n${p.output}`);
   }

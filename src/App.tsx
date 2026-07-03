@@ -155,6 +155,10 @@ function App(): React.JSX.Element {
   const [diskConflict, setDiskConflict] = useState<Record<string, boolean>>({});
   const [gitStatuses, setGitStatuses] = useState<Record<string, string>>({});
   const [fileTreeRefresh, setFileTreeRefresh] = useState(0);
+  // Bumped on every settings save so PipelinePanel (which loads its own copy
+  // of the store once on mount) knows to re-fetch stage config changes made
+  // in the Settings modal while the panel stays mounted underneath it.
+  const [pipelineRefresh, setPipelineRefresh] = useState(0);
   // Per-path mtime baseline for the external-change watcher, kept in a ref so a
   // re-render (e.g. typing) doesn't reset it and miss real external edits.
   const mtimeBaselineRef = useRef<Map<string, number>>(new Map());
@@ -498,6 +502,7 @@ function App(): React.JSX.Element {
       } catch {
         void 0;
       }
+      setPipelineRefresh((n) => n + 1);
     })();
   }, []);
 
@@ -652,6 +657,7 @@ function App(): React.JSX.Element {
                 onOpenSettings={handleOpenSettings}
                 activeFilePath={activePath}
                 openFilePaths={openTabs.map((t) => t.path)}
+                pipelineRefreshToken={pipelineRefresh}
                 onFileChanged={(p) => {
                   void handleFileChanged(p);
                   setFileTreeRefresh((n) => n + 1);

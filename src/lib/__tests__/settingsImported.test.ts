@@ -4,6 +4,7 @@ import {
   importedPresets,
   findPreset,
   resolveConnection,
+  backfillLegacyStagePrompts,
   type ProviderStore,
 } from "../settings";
 
@@ -93,5 +94,66 @@ describe("imported providers in settings", () => {
     store.importedProviders!["opencode"].flavor = "anthropic";
     const s = resolveConnection(store);
     expect(s?.flavor).toBe("anthropic");
+  });
+});
+
+describe("backfillLegacyStagePrompts", () => {
+  it("fills in the legacy prompt for a plan/code/review stage with no prompt", () => {
+    const store: ProviderStore = {
+      ...emptyStore(),
+      pipeline: {
+        stages: [
+          { id: "plan", label: "Plan", enabled: true },
+          { id: "code", label: "Code", enabled: true, backendId: "codex" },
+        ],
+      },
+    };
+    const result = backfillLegacyStagePrompts(store);
+    expect(result.pipeline?.stages[0].prompt).toBe(
+      "You are the PLAN stage. Produce a concise step-by-step plan. Do not write files.",
+    );
+    expect(result.pipeline?.stages[1].prompt).toBe(
+      "You are the CODE stage. Implement the plan. Use tools to read and write files.",
+    );
+    expect(result.pipeline?.stages[1].backendId).toBe("codex");
+  });
+
+  it("does not overwrite a prompt the user already set, even an empty string", () => {
+    const store: ProviderStore = {
+      ...emptyStore(),
+      pipeline: {
+        stages: [
+          { id: "plan", label: "Plan", enabled: true, prompt: "내가 직접 쓴 지시문" },
+          { id: "code", label: "Code", enabled: true, prompt: "" },
+        ],
+      },
+    };
+    const result = backfillLegacyStagePrompts(store);
+    expect(result.pipeline?.stages[0].prompt).toBe("내가 직접 쓴 지시문");
+    expect(result.pipeline?.stages[1].prompt).toBe("");
+  });
+
+  it("does not touch a non-legacy (user-added) stage id", () => {
+    const store: ProviderStore = {
+      ...emptyStore(),
+      pipeline: {
+        stages: [{ id: "worker1", label: "Worker 1", enabled: true }],
+      },
+    };
+    const result = backfillLegacyStagePrompts(store);
+    expect(result.pipeline?.stages[0].prompt).toBeUndefined();
+  });
+
+  it("returns the store unchanged (same reference) when there is nothing to backfill", () => {
+    const store: ProviderStore = {
+      ...emptyStore(),
+      pipeline: { stages: [{ id: "plan", label: "Plan", enabled: true, prompt: "custom" }] },
+    };
+    expect(backfillLegacyStagePrompts(store)).toBe(store);
+  });
+
+  it("passes through a store with no pipeline configured", () => {
+    const store = emptyStore();
+    expect(backfillLegacyStagePrompts(store)).toBe(store);
   });
 });

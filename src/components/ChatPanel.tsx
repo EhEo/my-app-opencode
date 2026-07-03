@@ -26,6 +26,7 @@ interface ChatPanelProps {
   onFileChanged: (path: string) => void;
   activeFilePath: string | null;
   openFilePaths: string[];
+  pipelineRefreshToken?: number;
 }
 
 type UiToolCardStatus = "running" | "ok" | "error";
@@ -63,6 +64,7 @@ export function ChatPanel({
   onFileChanged,
   activeFilePath,
   openFilePaths,
+  pipelineRefreshToken,
 }: ChatPanelProps): React.JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [uiItems, setUiItems] = useState<UiItem[]>([]);
@@ -469,6 +471,7 @@ export function ChatPanel({
           workspaceRoot={workspaceRoot}
           activeFilePath={activeFilePath}
           openFilePaths={openFilePaths}
+          refreshToken={pipelineRefreshToken}
         />
       </div>
     </aside>

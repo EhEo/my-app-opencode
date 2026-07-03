@@ -15,6 +15,7 @@ import { UsageStrip } from "./UsageStrip";
 type StageView = {
   id: string;
   label: string;
+  prompt: string | undefined;
   backendId: string | undefined; // undefined = default in-app
   status: "pending" | "running" | "done" | "error";
   output: string;
@@ -27,6 +28,7 @@ function initialStages(store: ProviderStore | null): StageView[] {
     .map((s) => ({
       id: s.id,
       label: s.label,
+      prompt: s.prompt,
       backendId: s.backendId,
       status: "pending",
       output: "",
@@ -37,10 +39,14 @@ export function PipelinePanel({
   workspaceRoot,
   activeFilePath,
   openFilePaths,
+  refreshToken,
 }: {
   workspaceRoot: string | null;
   activeFilePath: string | null;
   openFilePaths: string[];
+  /** Bumped by the parent whenever Settings is saved, so stage config edits
+   *  (add/remove/enable/prompt/backend) reach this always-mounted panel. */
+  refreshToken?: number;
 }): React.JSX.Element {
   const [store, setStore] = useState<ProviderStore | null>(null);
   const [input, setInput] = useState("");
@@ -82,7 +88,7 @@ export function PipelinePanel({
     return () => {
       cancelled = true;
     };
-  }, [workspaceRoot]);
+  }, [workspaceRoot, refreshToken]);
 
   const refreshUsage = useCallback(async (): Promise<void> => {
     const budget = store?.usageGuard?.perRunBudgetTokens;
@@ -125,8 +131,9 @@ export function PipelinePanel({
     setRunning(true);
 
     const stageConfigs: StageConfig[] = stages.map((s) => ({
-      id: s.id as StageConfig["id"],
+      id: s.id,
       label: s.label,
+      prompt: s.prompt,
       backendId: s.backendId,
       enabled: true,
     }));
@@ -202,7 +209,12 @@ export function PipelinePanel({
   );
 
   const workerIds = Object.keys(store?.workers ?? {});
-  const canRun = store !== null && !running && workspaceRoot !== null && input.trim() !== "";
+  const canRun =
+    store !== null &&
+    !running &&
+    workspaceRoot !== null &&
+    input.trim() !== "" &&
+    stages.length > 0;
 
   return (
     <div className="pipeline-panel">
