@@ -1,5 +1,5 @@
 import type OpenAI from "openai";
-import { createClient } from "./llm";
+import { createLlmClient } from "./llm";
 import { getAgentTools, executeTool } from "./tools";
 import { loadProviderStore } from "./settings";
 import {
@@ -97,7 +97,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<void> {
   // Hoisted so the catch handler can hand the partial history to onDone on abort.
   const working: ChatMessage[] = opts.messages.map((m) => ({ ...m }));
   try {
-    const client = createClient(settings);
+    const client = createLlmClient(settings);
     let sys = opts.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     try {
       const store = await loadProviderStore();

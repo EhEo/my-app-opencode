@@ -34,6 +34,33 @@ describe("resolveInappSettings", () => {
     const empty: ProviderStore = { activeProviderId: "custom", activeModel: "", providers: {} };
     expect(resolveInappSettings(empty, { providerId: "" })).toBeNull();
   });
+
+  it("carries the imported provider's flavor through for an explicit providerId", () => {
+    const withImported: ProviderStore = {
+      ...store,
+      importedProviders: {
+        "minimax-coding-plan": {
+          label: "MiniMax Token Plan",
+          baseUrl: "https://api.minimax.io/anthropic/v1",
+          models: ["MiniMax-M2.7"],
+          flavor: "anthropic",
+          usable: true,
+          importedAt: "2026-07-03T00:00:00Z",
+        },
+      },
+      providers: {
+        ...store.providers,
+        "minimax-coding-plan": { apiKey: "k", baseUrlOverride: null, modelsOverride: null },
+      },
+    };
+    const s = resolveInappSettings(withImported, { providerId: "minimax-coding-plan" });
+    expect(s).toEqual({
+      baseUrl: "https://api.minimax.io/anthropic/v1",
+      apiKey: "k",
+      model: "MiniMax-M2.7",
+      flavor: "anthropic",
+    });
+  });
 });
 
 describe("makePipelineDeps.runInapp", () => {

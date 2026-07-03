@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { Settings } from "./settings";
 import { createTauriFetch } from "./tauriFetch";
+import { createAnthropicClient, type LlmClient } from "./anthropicClient";
 
 const tauriFetch = createTauriFetch();
 
@@ -29,3 +30,14 @@ export function createClient(s: Settings): OpenAI {
     fetch: tauriFetch,
   });
 }
+
+/** Returns an LlmClient for the settings' flavor. Anthropic-flavor providers
+ *  (imported from opencode, see opencodeImport.ts) get an adapter that speaks
+ *  the OpenAI dialect in/out while calling the real Anthropic Messages API
+ *  underneath — agent.ts and testConnection never branch on flavor. */
+export function createLlmClient(s: Settings): LlmClient {
+  if (s.flavor === "anthropic") return createAnthropicClient(s);
+  return createClient(s) as unknown as LlmClient;
+}
+
+export type { LlmClient, LlmStreamChunk } from "./anthropicClient";

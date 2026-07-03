@@ -87,4 +87,11 @@ describe("imported providers in settings", () => {
     };
     expect(resolveConnection(store)).toBeNull();
   });
+
+  it("resolveConnection carries the flavor of an anthropic-flavor imported provider", () => {
+    const store = storeWithImported();
+    store.importedProviders!["opencode"].flavor = "anthropic";
+    const s = resolveConnection(store);
+    expect(s?.flavor).toBe("anthropic");
+  });
 });
