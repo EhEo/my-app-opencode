@@ -15,6 +15,7 @@ import { UsageStrip } from "./UsageStrip";
 type StageView = {
   id: string;
   label: string;
+  prompt: string | undefined;
   backendId: string | undefined; // undefined = default in-app
   status: "pending" | "running" | "done" | "error";
   output: string;
@@ -27,6 +28,7 @@ function initialStages(store: ProviderStore | null): StageView[] {
     .map((s) => ({
       id: s.id,
       label: s.label,
+      prompt: s.prompt,
       backendId: s.backendId,
       status: "pending",
       output: "",
@@ -125,8 +127,9 @@ export function PipelinePanel({
     setRunning(true);
 
     const stageConfigs: StageConfig[] = stages.map((s) => ({
-      id: s.id as StageConfig["id"],
+      id: s.id,
       label: s.label,
+      prompt: s.prompt,
       backendId: s.backendId,
       enabled: true,
     }));
