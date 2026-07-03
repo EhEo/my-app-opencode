@@ -27,7 +27,13 @@ export function resolveInappSettings(
   const baseUrl = entry.baseUrlOverride ?? preset.baseUrl;
   const model = backend.model || preset.models[0] || store.activeModel;
   if (baseUrl === "" || model === "") return null;
-  return { baseUrl, apiKey: entry.apiKey, model };
+  const importedFlavor = store.importedProviders?.[backend.providerId]?.flavor;
+  return {
+    baseUrl,
+    apiKey: entry.apiKey,
+    model,
+    flavor: importedFlavor === "anthropic" ? "anthropic" : undefined,
+  };
 }
 
 export function makePipelineDeps(store: ProviderStore): PipelineDeps {

@@ -1,10 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import { createClient } from "./llm";
+import { createLlmClient } from "./llm";
 
 export interface Settings {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** Wire format for createLlmClient. Undefined/"openai" = OpenAI-compatible
+   *  chat completions (the default for all built-in presets). "anthropic" =
+   *  routed through the Anthropic Messages API adapter (opencodeImport.ts
+   *  sets this from the imported provider's flavor). */
+  flavor?: "openai" | "anthropic";
 }
 
 export interface ProviderPreset {
@@ -201,7 +206,13 @@ export function resolveConnection(store: ProviderStore): Settings | null {
   const apiKey = entry.apiKey;
   const model = store.activeModel || preset.models[0] || "";
   if (baseUrl === "" || model === "") return null;
-  return { baseUrl, apiKey, model };
+  const importedFlavor = store.importedProviders?.[preset.id]?.flavor;
+  return {
+    baseUrl,
+    apiKey,
+    model,
+    flavor: importedFlavor === "anthropic" ? "anthropic" : undefined,
+  };
 }
 
 export async function loadSettings(): Promise<Settings | null> {
@@ -213,7 +224,7 @@ export async function testConnection(
   s: Settings,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const client = createClient(s);
+    const client = createLlmClient(s);
     await client.chat.completions.create({
       model: s.model,
       max_tokens: 5,

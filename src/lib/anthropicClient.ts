@@ -1,4 +1,6 @@
 import type OpenAI from "openai";
+import type { Settings } from "./settings";
+import { createTauriFetch } from "./tauriFetch";
 
 export interface AnthropicTextBlock {
   type: "text";
@@ -253,4 +255,100 @@ export function parseAnthropicSSEText(text: string): LlmStreamChunk[] {
     if (chunk !== null) out.push(chunk);
   }
   return out;
+}
+
+export interface LlmClient {
+  chat: {
+    completions: {
+      create(
+        params: {
+          model: string;
+          messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+          tools?: OpenAI.Chat.Completions.ChatCompletionTool[];
+          stream?: boolean;
+          max_tokens?: number;
+        },
+        options?: { signal?: AbortSignal },
+      ): Promise<AsyncIterable<LlmStreamChunk> | unknown>;
+    };
+  };
+}
+
+const DEFAULT_MAX_TOKENS = 8192;
+const ANTHROPIC_VERSION = "2023-06-01";
+
+async function* streamAnthropicChunks(res: Response): AsyncGenerator<LlmStreamChunk> {
+  if (res.body === null) throw new Error("Anthropic 응답에 본문이 없습니다");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      const chunk = chunkFromSSELine(line);
+      if (chunk !== null) yield chunk;
+    }
+  }
+  if (buf.length > 0) {
+    const chunk = chunkFromSSELine(buf);
+    if (chunk !== null) yield chunk;
+  }
+}
+
+/** Build an LlmClient backed by the Anthropic Messages API. Speaks the same
+ *  OpenAI dialect in (params shape) and out (LlmStreamChunk) as the real
+ *  OpenAI SDK client, so agent.ts / testConnection never branch on flavor. */
+export function createAnthropicClient(settings: Settings): LlmClient {
+  const tauriFetch = createTauriFetch();
+  return {
+    chat: {
+      completions: {
+        create: async (params, options) => {
+          const { system, messages } = toAnthropicMessages(params.messages);
+          const body: Record<string, unknown> = {
+            model: params.model,
+            messages,
+            max_tokens: params.max_tokens ?? DEFAULT_MAX_TOKENS,
+            stream: params.stream === true,
+          };
+          if (system !== undefined) body.system = system;
+          if (params.tools !== undefined && params.tools.length > 0) {
+            body.tools = toAnthropicTools(params.tools);
+          }
+          const res = await tauriFetch(`${settings.baseUrl}/messages`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": settings.apiKey,
+              "anthropic-version": ANTHROPIC_VERSION,
+            },
+            body: JSON.stringify(body),
+            signal: options?.signal,
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            let message = `HTTP ${res.status}`;
+            try {
+              const parsed = JSON.parse(text) as { error?: { message?: string } };
+              if (parsed.error?.message !== undefined) message = parsed.error.message;
+            } catch {
+              if (text.length > 0) message = text;
+            }
+            const err = new Error(message) as Error & { status?: number };
+            err.status = res.status;
+            throw err;
+          }
+          if (params.stream === true) {
+            return streamAnthropicChunks(res);
+          }
+          return res.json();
+        },
+      },
+    },
+  };
 }
