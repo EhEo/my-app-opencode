@@ -156,10 +156,36 @@ function isStore(value: unknown): value is ProviderStore {
   );
 }
 
+const LEGACY_STAGE_PROMPTS: Record<string, string> = {
+  plan: "You are the PLAN stage. Produce a concise step-by-step plan. Do not write files.",
+  code: "You are the CODE stage. Implement the plan. Use tools to read and write files.",
+  review:
+    "You are the REVIEW stage. Read the changes and report issues. Read-only — do not modify files.",
+};
+
+/** Back-fills the per-stage `prompt` field for pipeline stages saved before
+ *  that field existed. Older stores have stages with a known legacy id
+ *  (plan/code/review) and no prompt; buildBrief now reads stage.prompt
+ *  directly (no more STAGE_PROMPTS[id] fallback), so without this, those
+ *  users would silently lose their PLAN/CODE/REVIEW instructions. Never
+ *  overwrites a prompt the user has actually set (even an empty string). */
+export function backfillLegacyStagePrompts(store: ProviderStore): ProviderStore {
+  if (store.pipeline?.stages === undefined) return store;
+  let changed = false;
+  const stages = store.pipeline.stages.map((stage) => {
+    if (stage.prompt === undefined && LEGACY_STAGE_PROMPTS[stage.id] !== undefined) {
+      changed = true;
+      return { ...stage, prompt: LEGACY_STAGE_PROMPTS[stage.id] };
+    }
+    return stage;
+  });
+  return changed ? { ...store, pipeline: { stages } } : store;
+}
+
 export async function loadProviderStore(): Promise<ProviderStore> {
   const raw = await invoke<unknown>("get_settings");
   if (raw === null || !isStore(raw)) return emptyStore();
-  return raw;
+  return backfillLegacyStagePrompts(raw);
 }
 
 export async function saveProviderStore(store: ProviderStore): Promise<void> {

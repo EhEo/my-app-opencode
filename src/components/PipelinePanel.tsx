@@ -205,7 +205,12 @@ export function PipelinePanel({
   );
 
   const workerIds = Object.keys(store?.workers ?? {});
-  const canRun = store !== null && !running && workspaceRoot !== null && input.trim() !== "";
+  const canRun =
+    store !== null &&
+    !running &&
+    workspaceRoot !== null &&
+    input.trim() !== "" &&
+    stages.length > 0;
 
   return (
     <div className="pipeline-panel">
