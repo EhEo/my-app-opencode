@@ -15,7 +15,7 @@ export interface SkillEnableMap {
   [name: string]: { enabled: boolean };
 }
 
-function parseFrontmatter(
+export function parseFrontmatter(
   text: string,
 ): { metadata: SkillMetadata; body: string } {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
@@ -105,4 +105,60 @@ export function buildSkillsPrompt(
     "",
     sections.join("\n\n---\n\n"),
   ].join("\n");
+}
+
+export interface ExternalSkillCandidate {
+  source: "claude" | "codex";
+  label: string;
+  path: string;
+  preview: string;
+}
+
+/** Scans the two fixed external skill roots (Claude Code plugin cache,
+ *  Codex skills dir) — see scan_external_skills in the Rust backend. */
+export async function scanExternalSkills(): Promise<ExternalSkillCandidate[]> {
+  return invoke<ExternalSkillCandidate[]>("scan_external_skills");
+}
+
+export interface ResolvedSkillCandidate {
+  candidate: ExternalSkillCandidate;
+  name: string;
+  description: string;
+  /** Name to pass to installSkill. Equal to `name` unless another scanned
+   *  candidate shares the same name — then both get "name (source)". */
+  installName: string;
+  /** True when installName already matches a currently-installed skill. */
+  alreadyInstalled: boolean;
+}
+
+/** Resolves display/install names for scanned candidates: parses each one's
+ *  frontmatter, disambiguates same-name candidates from different sources
+ *  by appending "(source)" to BOTH, and flags names that already collide
+ *  with an installed skill (installSkill refuses those — never overwrites). */
+export function resolveImportNames(
+  candidates: ExternalSkillCandidate[],
+  installedNames: string[],
+): ResolvedSkillCandidate[] {
+  const parsed = candidates.map((c) => {
+    const { metadata } = parseFrontmatter(c.preview);
+    const fallback = c.label.split("/").pop() ?? c.label;
+    const name = metadata.name.length > 0 ? metadata.name : fallback;
+    return { candidate: c, name, description: metadata.description };
+  });
+  const nameCounts = new Map<string, number>();
+  for (const p of parsed) {
+    nameCounts.set(p.name, (nameCounts.get(p.name) ?? 0) + 1);
+  }
+  const installedSet = new Set(installedNames);
+  return parsed.map((p) => {
+    const collides = (nameCounts.get(p.name) ?? 0) > 1;
+    const installName = collides ? `${p.name} (${p.candidate.source})` : p.name;
+    return {
+      candidate: p.candidate,
+      name: p.name,
+      description: p.description,
+      installName,
+      alreadyInstalled: installedSet.has(installName),
+    };
+  });
 }
