@@ -39,10 +39,14 @@ export function PipelinePanel({
   workspaceRoot,
   activeFilePath,
   openFilePaths,
+  refreshToken,
 }: {
   workspaceRoot: string | null;
   activeFilePath: string | null;
   openFilePaths: string[];
+  /** Bumped by the parent whenever Settings is saved, so stage config edits
+   *  (add/remove/enable/prompt/backend) reach this always-mounted panel. */
+  refreshToken?: number;
 }): React.JSX.Element {
   const [store, setStore] = useState<ProviderStore | null>(null);
   const [input, setInput] = useState("");
@@ -84,7 +88,7 @@ export function PipelinePanel({
     return () => {
       cancelled = true;
     };
-  }, [workspaceRoot]);
+  }, [workspaceRoot, refreshToken]);
 
   const refreshUsage = useCallback(async (): Promise<void> => {
     const budget = store?.usageGuard?.perRunBudgetTokens;
