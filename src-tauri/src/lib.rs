@@ -870,6 +870,26 @@ fn set_settings(app: AppHandle, settings: serde_json::Value) -> Result<(), Strin
     })
 }
 
+/// Read opencode's auth.json (fixed path, read-only). Deliberately takes no
+/// path argument — this is not a general file-read surface.
+#[tauri::command]
+fn read_opencode_auth() -> Result<String, String> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "홈 디렉터리를 찾을 수 없습니다".to_string())?;
+    let path = std::path::PathBuf::from(home)
+        .join(".local")
+        .join("share")
+        .join("opencode")
+        .join("auth.json");
+    if !path.exists() {
+        return Err(
+            "opencode auth.json을 찾을 수 없습니다 (opencode 설치/로그인 기록 없음)".to_string(),
+        );
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 fn read_usage_logs(app: AppHandle) -> Result<UsageSummary, String> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
@@ -1555,6 +1575,7 @@ pub fn run() {
             run_command,
             get_settings,
             set_settings,
+            read_opencode_auth,
             read_usage_logs,
             agent_exec_start,
             agent_exec_kill,
