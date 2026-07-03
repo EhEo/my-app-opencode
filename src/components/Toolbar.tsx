@@ -1,5 +1,12 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+// The window is frameless (decorations: false) on every platform, so we draw
+// our own controls. macOS convention puts the traffic-light buttons at the
+// top-left; Windows keeps min/max/close at the top-right. Detect via the
+// webview user agent (no @tauri-apps/plugin-os dependency needed).
+const IS_MAC =
+  typeof navigator !== "undefined" && /Mac OS X|Macintosh/.test(navigator.userAgent);
+
 interface ToolbarProps {
   onOpenFolder: () => void;
   onSave: () => void;
@@ -28,14 +35,15 @@ export function Toolbar({
   return (
     <header className="toolbar" data-tauri-drag-region>
       <div className="toolbar__left" data-tauri-drag-region>
+        {IS_MAC ? <MacWindowControls /> : null}
         <button
           type="button"
-          className="toolbar__btn toolbar__btn--primary"
+          className="toolbar__btn"
           onClick={onOpenFolder}
           title="Open a local folder"
+          aria-label="Open Folder"
         >
           <FolderOpenIcon />
-          <span>Open Folder</span>
         </button>
         <button
           type="button"
@@ -43,9 +51,9 @@ export function Toolbar({
           onClick={onSave}
           disabled={!canSave}
           title="Save (Ctrl+S / Cmd+S)"
+          aria-label="Save"
         >
           <SaveIcon />
-          <span>Save</span>
           {dirty && canSave ? (
             <span className="toolbar__dirty-dot" aria-label="Unsaved changes" />
           ) : null}
@@ -75,10 +83,10 @@ export function Toolbar({
           }
           onClick={onToggleChat}
           title={chatVisible ? "Hide chat panel" : "Show chat panel"}
+          aria-label="Chat"
           aria-pressed={chatVisible}
         >
           <ChatIcon />
-          <span>Chat</span>
         </button>
         <button
           type="button"
@@ -88,10 +96,10 @@ export function Toolbar({
           }
           onClick={onToggleTerminal}
           title={terminalVisible ? "Hide terminal" : "Show terminal"}
+          aria-label="Terminal"
           aria-pressed={terminalVisible}
         >
           <TerminalIcon />
-          <span>Terminal</span>
         </button>
         <button
           type="button"
@@ -102,9 +110,58 @@ export function Toolbar({
         >
           <GearIcon />
         </button>
-        <WindowControls />
+        {IS_MAC ? null : <WindowControls />}
       </div>
     </header>
+  );
+}
+
+// macOS traffic-light controls, shown at the top-left. Order matches the
+// native convention: close, minimize, zoom (maximize). Glyphs reveal on hover.
+function MacWindowControls(): React.JSX.Element {
+  const win = getCurrentWindow();
+  return (
+    <div className="mac-window-controls" role="group" aria-label="Window controls">
+      <button
+        type="button"
+        className="mac-window-controls__btn mac-window-controls__btn--close"
+        onClick={() => {
+          void win.close();
+        }}
+        title="Close"
+        aria-label="Close"
+      >
+        <svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="mac-window-controls__btn mac-window-controls__btn--min"
+        onClick={() => {
+          void win.minimize();
+        }}
+        title="Minimize"
+        aria-label="Minimize"
+      >
+        <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M1 5h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="mac-window-controls__btn mac-window-controls__btn--zoom"
+        onClick={() => {
+          void win.toggleMaximize();
+        }}
+        title="Zoom"
+        aria-label="Zoom"
+      >
+        <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
+    </div>
   );
 }
 
