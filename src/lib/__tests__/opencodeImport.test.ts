@@ -65,7 +65,7 @@ describe("planImport", () => {
     expect(mm?.meta.usable).toBe(true);
   });
 
-  it("marks anthropic-flavor without alternate as unusable", () => {
+  it("marks anthropic-flavor without alternate as usable via the native endpoint (P2.5)", () => {
     const registry = {
       ...BUNDLED_REGISTRY,
       "some-anthropic": {
@@ -78,7 +78,7 @@ describe("planImport", () => {
     const auth = JSON.stringify({ "some-anthropic": { type: "api", key: "k" } });
     const plan = planImport(parseAuthJson(auth), registry, NOW);
     const item = plan.items.find((i) => i.id === "some-anthropic");
-    expect(item?.meta.usable).toBe(false);
+    expect(item?.meta.usable).toBe(true);
     expect(item?.meta.baseUrl).toBe("https://a.example/v1");
   });
 

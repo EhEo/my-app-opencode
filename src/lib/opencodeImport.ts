@@ -136,10 +136,13 @@ export function planImport(
     }
     const flavor = flavorOf(reg.npm);
     let baseUrl = reg.api;
-    let usable = flavor === "openai";
+    // openai-compatible works directly. anthropic works either via a known
+    // OpenAI-compatible alternate (preferred — simpler, already verified for
+    // minimax) or via the native Anthropic endpoint through the
+    // anthropicClient adapter (P2.5) — either way it's usable.
+    const usable = flavor === "openai" || flavor === "anthropic";
     if (flavor === "anthropic" && ALTERNATE_OPENAI_BASE[e.id] !== undefined) {
       baseUrl = ALTERNATE_OPENAI_BASE[e.id];
-      usable = true;
     }
     items.push({
       id: e.id,
