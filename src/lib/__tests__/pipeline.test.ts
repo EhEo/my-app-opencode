@@ -71,3 +71,48 @@ describe("runPipeline", () => {
     expect(results.map((r) => r.stageId)).toEqual(["code"]);
   });
 });
+
+describe("buildBrief with custom prompts", () => {
+  it("includes the stage's own prompt text", () => {
+    const stage: StageConfig = {
+      id: "w1",
+      label: "Worker 1",
+      enabled: true,
+      prompt: "Do the research.",
+    };
+    const brief = buildBrief("find bugs", stage, []);
+    expect(brief).toBe("Do the research.\n\n# Request\nfind bugs");
+  });
+
+  it("omits the prompt section entirely when prompt is empty or undefined", () => {
+    const noPrompt: StageConfig = { id: "w1", label: "Worker 1", enabled: true };
+    expect(buildBrief("find bugs", noPrompt, [])).toBe("# Request\nfind bugs");
+
+    const emptyPrompt: StageConfig = { id: "w2", label: "Worker 2", enabled: true, prompt: "" };
+    expect(buildBrief("find bugs", emptyPrompt, [])).toBe("# Request\nfind bugs");
+  });
+});
+
+describe("runPipeline with an arbitrary custom stage list", () => {
+  it("runs a 4-stage worker+judge chain with free-form ids and per-stage prompts", async () => {
+    const stages: StageConfig[] = [
+      { id: "worker1", label: "Worker 1", enabled: true, prompt: "Research the codebase." },
+      { id: "worker2", label: "Worker 2", enabled: true, prompt: "Implement the change." },
+      { id: "worker3", label: "Worker 3", enabled: true, prompt: "Write tests." },
+      {
+        id: "judge",
+        label: "Judge",
+        enabled: true,
+        prompt: "Review all prior outputs and give a final verdict.",
+      },
+    ];
+    const results = await runPipeline({ request: "add auth", stages, deps: okDeps });
+    expect(results.map((r) => r.stageId)).toEqual(["worker1", "worker2", "worker3", "judge"]);
+    expect(results.every((r) => r.output.startsWith("inapp:"))).toBe(true);
+  });
+
+  it("runs with zero stages without crashing", async () => {
+    const results = await runPipeline({ request: "x", stages: [], deps: okDeps });
+    expect(results).toEqual([]);
+  });
+});

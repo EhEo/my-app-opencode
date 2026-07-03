@@ -97,8 +97,11 @@ export type WorkerBackend =
   | { kind: "mcp"; server: string; tool: string };
 
 export interface StageConfig {
-  id: "plan" | "code" | "review";
+  id: string;
   label: string;
+  /** Per-stage task instructions. Empty/undefined = no instruction text is
+   *  added to the brief (request + prior-stage outputs still are). */
+  prompt?: string;
   backendId?: string;
   enabled: boolean;
 }
