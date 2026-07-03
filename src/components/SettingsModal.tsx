@@ -29,7 +29,10 @@ import {
   installSkill as installSkillBackend,
   loadAllInstalledSkills,
   uninstallSkill as uninstallSkillBackend,
+  scanExternalSkills,
+  resolveImportNames,
   type InstalledSkill,
+  type ExternalSkillCandidate,
 } from "../lib/skills";
 
 import type { ThemeMode } from "../lib/theme";
@@ -1344,6 +1347,69 @@ function SkillsSection({
   const [skillName, setSkillName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [externalCandidates, setExternalCandidates] = useState<ExternalSkillCandidate[] | null>(
+    null,
+  );
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const resolvedCandidates = useMemo(
+    () =>
+      externalCandidates !== null
+        ? resolveImportNames(
+            externalCandidates,
+            skills.map((s) => s.name),
+          )
+        : [],
+    [externalCandidates, skills],
+  );
+
+  const handleScan = async (): Promise<void> => {
+    setScanning(true);
+    setScanError(null);
+    try {
+      const found = await scanExternalSkills();
+      setExternalCandidates(found);
+      setSelectedPaths(new Set());
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const toggleSelected = (path: string): void => {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const handleImportSelected = async (): Promise<void> => {
+    const toImport = resolvedCandidates.filter(
+      (r) => selectedPaths.has(r.candidate.path) && !r.alreadyInstalled,
+    );
+    if (toImport.length === 0) return;
+    setImporting(true);
+    setImportError(null);
+    const failures: string[] = [];
+    for (const r of toImport) {
+      try {
+        await installSkillBackend(r.candidate.path, r.installName);
+      } catch (e) {
+        failures.push(`${r.installName}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    setImportError(failures.length > 0 ? failures.join("\n") : null);
+    setSelectedPaths(new Set());
+    await onRefresh();
+    setImporting(false);
+  };
 
   const enabledMap = store.skills ?? {};
 
@@ -1466,6 +1532,71 @@ function SkillsSection({
           })}
         </ul>
       )}
+
+      <h3 className="settings-modal__section-title">Claude Code / Codex에서 가져오기</h3>
+      <p className="settings-modal__hint">
+        로컬에 설치된 Claude Code 플러그인(<code>~/.claude/plugins/cache</code>)과
+        Codex 스킬(<code>~/.codex/skills</code>)을 스캔해 원하는 것만 선택해서
+        가져옵니다.
+      </p>
+      <button
+        type="button"
+        className="settings-modal__btn settings-modal__btn--small"
+        onClick={() => void handleScan()}
+        disabled={scanning}
+      >
+        {scanning ? "스캔 중…" : "스캔"}
+      </button>
+      {scanError !== null ? (
+        <div className="settings-modal__mcp-error">{scanError}</div>
+      ) : null}
+      {externalCandidates !== null ? (
+        externalCandidates.length === 0 ? (
+          <p className="settings-modal__hint">
+            설치된 Claude Code 플러그인·Codex 스킬을 찾을 수 없습니다.
+          </p>
+        ) : (
+          <>
+            <ul className="settings-modal__mcp-list">
+              {resolvedCandidates.map((r) => (
+                <li key={r.candidate.path} className="settings-modal__mcp-item">
+                  <div className="settings-modal__mcp-row1">
+                    <label className="settings-modal__mcp-toggle">
+                      <input
+                        type="checkbox"
+                        checked={selectedPaths.has(r.candidate.path)}
+                        disabled={r.alreadyInstalled}
+                        onChange={() => toggleSelected(r.candidate.path)}
+                      />
+                      <span>{r.installName}</span>
+                    </label>
+                    <span className="settings-modal__mcp-url">{r.candidate.source}</span>
+                    {r.alreadyInstalled ? <span>(이미 설치됨)</span> : null}
+                  </div>
+                  <div className="settings-modal__mcp-row2">
+                    {r.description.length > 0 ? (
+                      <span>{r.description}</span>
+                    ) : (
+                      <span style={{ opacity: 0.6 }}>(description 없음)</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {importError !== null ? (
+              <div className="settings-modal__mcp-error">{importError}</div>
+            ) : null}
+            <button
+              type="button"
+              className="settings-modal__btn settings-modal__btn--primary settings-modal__btn--small"
+              onClick={() => void handleImportSelected()}
+              disabled={importing || selectedPaths.size === 0}
+            >
+              {importing ? "가져오는 중…" : `선택 항목 가져오기 (${selectedPaths.size})`}
+            </button>
+          </>
+        )
+      ) : null}
 
       <div className="settings-modal__mcp-add">
         <input

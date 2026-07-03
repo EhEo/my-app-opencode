@@ -1034,6 +1034,80 @@ fn skill_uninstall(app: AppHandle, name: String) -> Result<(), String> {
     fs::remove_dir_all(&path).map_err(|e| e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExternalSkillCandidate {
+    source: String,
+    label: String,
+    path: String,
+    preview: String,
+}
+
+const MAX_SKILL_PREVIEW_BYTES: usize = 1_000_000;
+
+/// Recursively finds every SKILL.md under `root` and appends one candidate
+/// per hit. Missing root is not an error (the tool just isn't installed);
+/// unreadable/oversized files are skipped individually so one bad skill
+/// can't abort the whole scan.
+fn collect_skill_candidates(root: &Path, source: &str, out: &mut Vec<ExternalSkillCandidate>) {
+    if !root.exists() {
+        return;
+    }
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if entry.file_name().to_str() != Some("SKILL.md") {
+            continue;
+        }
+        let skill_dir = match entry.path().parent() {
+            Some(p) => p,
+            None => continue,
+        };
+        let text = match fs::read_to_string(entry.path()) {
+            Ok(t) if t.len() <= MAX_SKILL_PREVIEW_BYTES => t,
+            _ => continue,
+        };
+        let label = entry
+            .path()
+            .strip_prefix(root)
+            .ok()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|| skill_dir.to_string_lossy().into_owned());
+        out.push(ExternalSkillCandidate {
+            source: source.to_string(),
+            label,
+            path: skill_dir.to_string_lossy().into_owned(),
+            preview: text,
+        });
+    }
+}
+
+/// Scans exactly two fixed, home-relative roots for installed Agent Skills
+/// (Claude Code plugin cache, Codex skills dir). Takes no path argument —
+/// this is not a general filesystem scan surface. Codex's separate
+/// `~/.codex/plugins/` (MCP connector bundles) is intentionally excluded.
+#[tauri::command]
+fn scan_external_skills() -> Result<Vec<ExternalSkillCandidate>, String> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "홈 디렉터리를 찾을 수 없습니다".to_string())?;
+    let home = PathBuf::from(home);
+    let mut out: Vec<ExternalSkillCandidate> = Vec::new();
+    collect_skill_candidates(
+        &home.join(".claude").join("plugins").join("cache"),
+        "claude",
+        &mut out,
+    );
+    collect_skill_candidates(&home.join(".codex").join("skills"), "codex", &mut out);
+    Ok(out)
+}
+
 // --- Terminal (PTY) ------------------------------------------------------
 // Interactive shell spawned via portable-pty. The webview has no child_process
 // API, so all PTY I/O is owned by Rust. Output bytes stream to the webview
@@ -1585,6 +1659,7 @@ pub fn run() {
             skill_list,
             skill_read,
             skill_uninstall,
+            scan_external_skills,
             terminal_create,
             terminal_write,
             terminal_resize,
