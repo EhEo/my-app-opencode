@@ -873,6 +873,19 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
   const [newCmd, setNewCmd] = useState("");
   const [detected, setDetected] = useState<Record<string, boolean>>({});
 
+  const allPresets = useMemo(
+    () => [...PROVIDER_PRESETS, ...importedPresets(store)],
+    [store],
+  );
+  const [newInappId, setNewInappId] = useState("");
+  const [newInappProvider, setNewInappProvider] = useState(allPresets[0]?.id ?? "");
+  const [newInappModel, setNewInappModel] = useState("");
+  const newInappPreset = allPresets.find((p) => p.id === newInappProvider);
+  const newInappModels =
+    newInappPreset !== undefined
+      ? (store.providers[newInappPreset.id]?.modelsOverride ?? newInappPreset.models)
+      : [];
+
   const workers = store.workers ?? {};
   const stages: StageConfig[] = store.pipeline?.stages ?? DEFAULT_STAGES;
   const guard = store.usageGuard ?? { enabled: false, warnRatio: 0.8 };
@@ -892,6 +905,16 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
     setStore((s) => ({ ...s, workers: { ...(s.workers ?? {}), [id]: backend } }));
     setNewId("");
     setNewCmd("");
+  };
+
+  const addInappWorker = (): void => {
+    const id = newInappId.trim();
+    const model = newInappModel.trim();
+    if (id === "" || newInappProvider === "" || model === "" || workers[id] !== undefined) return;
+    const backend: WorkerBackend = { kind: "inapp", providerId: newInappProvider, model };
+    setStore((s) => ({ ...s, workers: { ...(s.workers ?? {}), [id]: backend } }));
+    setNewInappId("");
+    setNewInappModel("");
   };
 
   const removeWorker = (id: string): void => {
@@ -983,6 +1006,79 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
         </button>
       </div>
 
+      <h3 className="settings-modal__section-title">인앱 워커 (다른 프로바이더·모델)</h3>
+      <p className="settings-modal__hint">
+        기본 활성 프로바이더가 아닌 다른 프로바이더·모델(opencode에서 가져온 것 포함)을
+        파이프라인 단계에서 쓰고 싶을 때 여기서 이름을 붙여 등록합니다.
+      </p>
+      <ul className="settings-modal__mcp-list">
+        {workerIds.map((id) => {
+          const w = workers[id];
+          if (w.kind !== "inapp") return null;
+          return (
+            <li key={id} className="settings-modal__mcp-item">
+              <div className="settings-modal__mcp-row1">
+                <span className="settings-modal__mcp-name">{id}</span>
+                <code className="settings-modal__mcp-url">
+                  {findPreset(store, w.providerId)?.label ?? w.providerId} · {w.model ?? ""}
+                </code>
+                <button
+                  type="button"
+                  className="settings-modal__btn settings-modal__btn--small settings-modal__btn--danger"
+                  onClick={() => removeWorker(id)}
+                >
+                  제거
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="settings-modal__mcp-add">
+        <input
+          className="settings-modal__input"
+          placeholder="워커 id (예: worker2)"
+          value={newInappId}
+          onChange={(e) => setNewInappId(e.target.value)}
+        />
+        <select
+          className="settings-modal__input settings-modal__select"
+          value={newInappProvider}
+          onChange={(e) => {
+            setNewInappProvider(e.target.value);
+            setNewInappModel("");
+          }}
+        >
+          {allPresets.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="settings-modal__input settings-modal__select"
+          value={newInappModel}
+          onChange={(e) => setNewInappModel(e.target.value)}
+        >
+          <option value="">모델 선택…</option>
+          {newInappModels.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="settings-modal__btn settings-modal__btn--primary settings-modal__btn--small"
+          onClick={addInappWorker}
+          disabled={
+            newInappId.trim() === "" || newInappProvider === "" || newInappModel.trim() === ""
+          }
+        >
+          추가
+        </button>
+      </div>
+
       <h3 className="settings-modal__section-title">파이프라인 단계 기본 백엔드</h3>
       {stages.map((st) => (
         <div key={st.id} className="settings-modal__field">
@@ -993,11 +1089,20 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
             onChange={(e) => setStageBackend(st.id, e.target.value)}
           >
             <option value="">기본 (인앱 AI)</option>
-            {workerIds.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
+            {workerIds.map((id) => {
+              const w = workers[id];
+              const label =
+                w.kind === "cli"
+                  ? `${id} (CLI: ${w.command})`
+                  : w.kind === "inapp"
+                    ? `${id} (${findPreset(store, w.providerId)?.label ?? w.providerId} · ${w.model ?? ""})`
+                    : id;
+              return (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              );
+            })}
           </select>
         </div>
       ))}
