@@ -2,7 +2,8 @@ import { runAgent } from "./agent";
 import { callTool } from "./mcp";
 import {
   resolveConnection,
-  PROVIDER_PRESETS,
+  findPreset,
+  isProviderUsable,
   type ProviderStore,
   type Settings,
 } from "./settings";
@@ -19,9 +20,10 @@ export function resolveInappSettings(
       ? { ...base, model: backend.model }
       : base;
   }
-  const preset = PROVIDER_PRESETS.find((p) => p.id === backend.providerId);
+  const preset = findPreset(store, backend.providerId);
   const entry = store.providers[backend.providerId];
   if (preset === undefined || entry === undefined) return null;
+  if (!isProviderUsable(store, backend.providerId)) return null;
   const baseUrl = entry.baseUrlOverride ?? preset.baseUrl;
   const model = backend.model || preset.models[0] || store.activeModel;
   if (baseUrl === "" || model === "") return null;
