@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   PROVIDER_PRESETS,
+  importedPresets,
+  findPreset,
   emptyStore,
   loadProviderStore,
   resolveConnection,
@@ -15,6 +17,7 @@ import {
   type WorkerBackend,
   type StageConfig,
 } from "../lib/settings";
+import { importFromOpencode } from "../lib/opencodeImport";
 import {
   applyConfig as applyMcpConfig,
   getStatuses,
@@ -62,6 +65,7 @@ export function SettingsModal({
   const [activeTab, setActiveTab] = useState<
     "ai" | "mcp" | "skills" | "terminal" | "agents" | "display"
   >("ai");
+  const [importMsg, setImportMsg] = useState<string | null>(null);
 const [skillsInstalled, setSkillsInstalled] = useState<InstalledSkill[]>([]);
 
 const loadSkillsInstalled = useCallback(async (): Promise<void> => {
@@ -111,9 +115,9 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
   }, [open, onClose]);
 
   const activePreset: ProviderPreset = useMemo(() => {
-    const found = PROVIDER_PRESETS.find((p) => p.id === store.activeProviderId);
+    const found = findPreset(store, store.activeProviderId);
     return found ?? PROVIDER_PRESETS[0];
-  }, [store.activeProviderId]);
+  }, [store, store.activeProviderId]);
 
   const activeEntry: ProviderEntry = useMemo(() => {
     return (
@@ -190,6 +194,27 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
     },
     [updateEntry],
   );
+
+  const handleImportOpencode = useCallback(async (): Promise<void> => {
+    setImportMsg("가져오는 중…");
+    try {
+      const { store: next, summary, registryFallback } =
+        await importFromOpencode(store);
+      setStore(next);
+      let msg = `추가 ${summary.added.length} · 갱신 ${summary.updated.length} · 건너뜀 ${summary.skipped.length}`;
+      if (summary.skipped.some((s) => s.reason === "oauth-p2")) {
+        msg += " (OAuth는 P2에서 지원 예정)";
+      }
+      if (summary.unusable.length > 0) {
+        msg += ` · 형식 미지원 ${summary.unusable.length}`;
+      }
+      if (registryFallback) msg += " · 레지스트리 접속 실패, 내장 목록 사용";
+      msg += " — 저장을 눌러 적용하세요";
+      setImportMsg(msg);
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message : String(e));
+    }
+  }, [store]);
 
   const handleBaseUrlChange = useCallback(
     (value: string): void => {
@@ -372,21 +397,41 @@ const loadSkillsInstalled = useCallback(async (): Promise<void> => {
 
         {activeTab === "ai" ? (
           <div className="settings-modal__body">
+          {/* opencode import */}
+          <div className="settings-modal__field">
+            <div className="settings-modal__import-row">
+              <button
+                type="button"
+                className="settings-modal__btn"
+                onClick={() => void handleImportOpencode()}
+              >
+                opencode에서 가져오기
+              </button>
+              {importMsg !== null ? (
+                <span className="settings-modal__import-msg">{importMsg}</span>
+              ) : null}
+            </div>
+          </div>
+
           {/* Provider list */}
           <div className="settings-modal__field">
             <span className="settings-modal__label">Provider</span>
             <div className="settings-modal__provider-list" role="radiogroup">
-              {PROVIDER_PRESETS.map((preset) => {
+              {[...PROVIDER_PRESETS, ...importedPresets(store)].map((preset) => {
                 const selected = preset.id === store.activeProviderId;
+                const unusable =
+                  store.importedProviders?.[preset.id]?.usable === false;
                 return (
                   <button
                     key={preset.id}
                     type="button"
                     role="radio"
                     aria-checked={selected}
+                    disabled={unusable}
                     className={
                       "settings-modal__provider" +
-                      (selected ? " settings-modal__provider--selected" : "")
+                      (selected ? " settings-modal__provider--selected" : "") +
+                      (unusable ? " settings-modal__provider--disabled" : "")
                     }
                     onClick={() => setActiveProvider(preset.id)}
                   >

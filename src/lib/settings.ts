@@ -57,6 +57,19 @@ export interface ProviderEntry {
   modelsOverride: string[] | null;
 }
 
+export type ImportedFlavor = "openai" | "anthropic" | "other";
+
+/** Metadata for a provider imported from opencode. The API key itself lives
+ *  in store.providers[id].apiKey (single storage path, reuses existing UI). */
+export interface ImportedProviderMeta {
+  label: string;
+  baseUrl: string;
+  models: string[];
+  flavor: ImportedFlavor;
+  usable: boolean;
+  importedAt: string;
+}
+
 export type McpServerType = "remote";
 
 export interface McpServerEntry {
@@ -101,6 +114,7 @@ export interface ProviderStore {
     warnRatio: number;
     providers?: string[];
   };
+  importedProviders?: Record<string, ImportedProviderMeta>;
 }
 
 // Shell presets offered in Settings. `command` is passed to the backend; an
@@ -144,9 +158,40 @@ export async function saveProviderStore(store: ProviderStore): Promise<void> {
   await invoke<void>("set_settings", { settings: store });
 }
 
+/** Imported providers materialized as presets so they join the same UI and
+ *  resolution path. Built-in preset ids win on collision. */
+export function importedPresets(store: ProviderStore): ProviderPreset[] {
+  return Object.entries(store.importedProviders ?? {})
+    .filter(([id]) => !PROVIDER_PRESETS.some((p) => p.id === id))
+    .map(([id, m]) => ({
+      id,
+      label: `${m.label} (opencode)`,
+      baseUrl: m.baseUrl,
+      models: m.models,
+      docsUrl: null,
+      hint: m.usable ? "opencode에서 가져옴" : "형식 미지원 — 어댑터 추가 예정",
+    }));
+}
+
+export function findPreset(
+  store: ProviderStore,
+  id: string,
+): ProviderPreset | undefined {
+  return (
+    PROVIDER_PRESETS.find((p) => p.id === id) ??
+    importedPresets(store).find((p) => p.id === id)
+  );
+}
+
+export function isProviderUsable(store: ProviderStore, id: string): boolean {
+  const meta = store.importedProviders?.[id];
+  return meta === undefined || meta.usable;
+}
+
 export function resolveConnection(store: ProviderStore): Settings | null {
-  const preset = PROVIDER_PRESETS.find((p) => p.id === store.activeProviderId);
+  const preset = findPreset(store, store.activeProviderId);
   if (preset === undefined) return null;
+  if (!isProviderUsable(store, preset.id)) return null;
   const entry = store.providers[preset.id] ?? {
     apiKey: "",
     baseUrlOverride: null,
