@@ -871,6 +871,7 @@ interface AgentsSectionProps {
 function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Element {
   const [newId, setNewId] = useState("");
   const [newCmd, setNewCmd] = useState("");
+  const [newArgs, setNewArgs] = useState("exec @brief");
   const [detected, setDetected] = useState<Record<string, boolean>>({});
 
   const allPresets = useMemo(
@@ -894,10 +895,11 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
     const id = newId.trim();
     const command = newCmd.trim();
     if (id === "" || command === "" || workers[id] !== undefined) return;
+    const argsTemplate = newArgs.trim() !== "" ? newArgs.trim().split(/\s+/) : ["exec", "@brief"];
     const backend: WorkerBackend = {
       kind: "cli",
       command,
-      argsTemplate: ["exec", "@brief"],
+      argsTemplate,
       briefMode: "arg",
       timeoutSec: 300,
       resultParse: "raw",
@@ -905,6 +907,7 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
     setStore((s) => ({ ...s, workers: { ...(s.workers ?? {}), [id]: backend } }));
     setNewId("");
     setNewCmd("");
+    setNewArgs("exec @brief");
   };
 
   const addInappWorker = (): void => {
@@ -1020,6 +1023,12 @@ function AgentsSection({ store, setStore }: AgentsSectionProps): React.JSX.Eleme
           placeholder="명령 (예: codex)"
           value={newCmd}
           onChange={(e) => setNewCmd(e.target.value)}
+        />
+        <input
+          className="settings-modal__input"
+          placeholder="인자 템플릿 (예: exec --sandbox danger-full-access @brief)"
+          value={newArgs}
+          onChange={(e) => setNewArgs(e.target.value)}
         />
         <button
           type="button"
