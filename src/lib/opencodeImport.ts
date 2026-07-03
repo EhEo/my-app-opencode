@@ -4,6 +4,8 @@ import {
   type ImportedProviderMeta,
   type ProviderStore,
 } from "./settings";
+import { invoke } from "@tauri-apps/api/core";
+import { createTauriFetch } from "./tauriFetch";
 
 export interface AuthEntry {
   id: string;
@@ -190,4 +192,48 @@ export function applyImport(
     store: next,
     summary: { added, updated, skipped: plan.skipped, unusable },
   };
+}
+
+export async function fetchRegistry(): Promise<Registry> {
+  const tfetch = createTauriFetch();
+  const res = await tfetch("https://models.dev/api.json", { method: "GET" });
+  if (!res.ok) throw new Error(`models.dev HTTP ${res.status}`);
+  const data = (await res.json()) as Record<
+    string,
+    { name?: string; api?: string; npm?: string; models?: Record<string, unknown> }
+  >;
+  const out: Registry = {};
+  for (const [id, p] of Object.entries(data)) {
+    if (typeof p !== "object" || p === null) continue;
+    if (typeof p.api !== "string" || typeof p.npm !== "string") continue;
+    out[id] = {
+      name: typeof p.name === "string" ? p.name : id,
+      api: p.api,
+      npm: p.npm,
+      models: Object.keys(p.models ?? {}),
+    };
+  }
+  return out;
+}
+
+/** One-shot import: read opencode's auth.json, resolve providers via the
+ *  models.dev registry (bundled snapshot on failure), and upsert the store.
+ *  Never touches opencode's files beyond the read. */
+export async function importFromOpencode(store: ProviderStore): Promise<{
+  store: ProviderStore;
+  summary: ImportSummary;
+  registryFallback: boolean;
+}> {
+  const raw = await invoke<string>("read_opencode_auth");
+  const entries = parseAuthJson(raw);
+  let registry: Registry;
+  let registryFallback = false;
+  try {
+    registry = await fetchRegistry();
+  } catch {
+    registry = BUNDLED_REGISTRY;
+    registryFallback = true;
+  }
+  const plan = planImport(entries, registry, new Date().toISOString());
+  return { ...applyImport(store, plan), registryFallback };
 }
