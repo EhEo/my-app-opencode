@@ -5,6 +5,7 @@ import {
   findPreset,
   resolveConnection,
   backfillLegacyStagePrompts,
+  backfillDefaultCliWorkers,
   type ProviderStore,
 } from "../settings";
 
@@ -155,5 +156,41 @@ describe("backfillLegacyStagePrompts", () => {
   it("passes through a store with no pipeline configured", () => {
     const store = emptyStore();
     expect(backfillLegacyStagePrompts(store)).toBe(store);
+  });
+});
+
+describe("backfillDefaultCliWorkers", () => {
+  it("seeds claude/codex/agy on a fresh store and marks it seeded", () => {
+    const result = backfillDefaultCliWorkers(emptyStore());
+    expect(Object.keys(result.workers ?? {}).sort()).toEqual(["agy", "claude", "codex"]);
+    expect(result.defaultWorkersSeeded).toBe(true);
+  });
+
+  it("does not overwrite a worker the user already registered under the same id", () => {
+    const store: ProviderStore = {
+      ...emptyStore(),
+      workers: {
+        claude: {
+          kind: "cli",
+          command: "my-claude",
+          argsTemplate: ["--custom"],
+          briefMode: "arg",
+        },
+      },
+    };
+    const result = backfillDefaultCliWorkers(store);
+    expect(result.workers?.claude).toEqual(store.workers?.claude);
+    expect(result.workers?.codex).toBeDefined();
+  });
+
+  it("does not re-seed a removed default once already seeded once", () => {
+    const store: ProviderStore = {
+      ...emptyStore(),
+      defaultWorkersSeeded: true,
+      workers: {},
+    };
+    const result = backfillDefaultCliWorkers(store);
+    expect(result.workers).toEqual({});
+    expect(result).toBe(store);
   });
 });

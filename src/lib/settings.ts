@@ -123,6 +123,9 @@ export interface ProviderStore {
     providers?: string[];
   };
   importedProviders?: Record<string, ImportedProviderMeta>;
+  /** True once backfillDefaultCliWorkers has run at least once for this
+   *  store, so removing a default worker sticks (it won't be re-seeded). */
+  defaultWorkersSeeded?: boolean;
 }
 
 // Shell presets offered in Settings. `command` is passed to the backend; an
@@ -182,10 +185,54 @@ export function backfillLegacyStagePrompts(store: ProviderStore): ProviderStore 
   return changed ? { ...store, pipeline: { stages } } : store;
 }
 
+// Built-in CLI worker presets (claude/codex/agy) so a fresh install has them
+// ready to pick without re-typing command/args on every machine.
+const DEFAULT_CLI_WORKERS: Record<string, WorkerBackend> = {
+  claude: {
+    kind: "cli",
+    command: "claude",
+    argsTemplate: ["-p", "@brief"],
+    briefMode: "arg",
+    timeoutSec: 300,
+    resultParse: "raw",
+  },
+  codex: {
+    kind: "cli",
+    command: "codex",
+    argsTemplate: ["exec", "--sandbox", "danger-full-access", "@brief"],
+    briefMode: "arg",
+    timeoutSec: 300,
+    resultParse: "raw",
+  },
+  agy: {
+    kind: "cli",
+    command: "agy",
+    argsTemplate: ["exec", "@brief"],
+    briefMode: "arg",
+    timeoutSec: 300,
+    resultParse: "raw",
+  },
+};
+
+/** Seeds the three built-in CLI worker presets on first load only (guarded by
+ *  defaultWorkersSeeded), so a user who deliberately removes one doesn't get
+ *  it added back on the next launch. Never overwrites an existing worker of
+ *  the same id. */
+export function backfillDefaultCliWorkers(store: ProviderStore): ProviderStore {
+  if (store.defaultWorkersSeeded === true) return store;
+  const workers = { ...(store.workers ?? {}) };
+  for (const [id, backend] of Object.entries(DEFAULT_CLI_WORKERS)) {
+    if (workers[id] === undefined) {
+      workers[id] = backend;
+    }
+  }
+  return { ...store, workers, defaultWorkersSeeded: true };
+}
+
 export async function loadProviderStore(): Promise<ProviderStore> {
   const raw = await invoke<unknown>("get_settings");
-  if (raw === null || !isStore(raw)) return emptyStore();
-  return backfillLegacyStagePrompts(raw);
+  if (raw === null || !isStore(raw)) return backfillDefaultCliWorkers(emptyStore());
+  return backfillDefaultCliWorkers(backfillLegacyStagePrompts(raw));
 }
 
 export async function saveProviderStore(store: ProviderStore): Promise<void> {
