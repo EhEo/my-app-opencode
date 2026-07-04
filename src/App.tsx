@@ -63,6 +63,17 @@ function readLayoutPx(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+// Last opened workspace folder, restored on startup.
+const LAST_WORKSPACE_ROOT_KEY = "lastWorkspaceRoot";
+
+function saveLastWorkspaceRoot(path: string | null): void {
+  if (path === null) {
+    localStorage.removeItem(LAST_WORKSPACE_ROOT_KEY);
+  } else {
+    localStorage.setItem(LAST_WORKSPACE_ROOT_KEY, path);
+  }
+}
+
 function clampPx(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
@@ -204,6 +215,25 @@ function App(): React.JSX.Element {
     };
   }, []);
 
+  // Restore the last opened folder on startup. If it no longer exists (moved
+  // or deleted), fail silently and start with no folder open.
+  useEffect(() => {
+    const last = localStorage.getItem(LAST_WORKSPACE_ROOT_KEY);
+    if (last === null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await fs.setWorkspaceRoot(last);
+        if (!cancelled) setRootPath(last);
+      } catch {
+        saveLastWorkspaceRoot(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const openTabs = useMemo<TabInfo[]>(() => {
     return tabsOrderRef.current
       .filter((p) => tabs[p] !== undefined)
@@ -228,6 +258,7 @@ function App(): React.JSX.Element {
       if (picked === null) return;
       await fs.setWorkspaceRoot(picked);
       setRootPath(picked);
+      saveLastWorkspaceRoot(picked);
       setTabs({});
       setActivePath(null);
       tabsOrderRef.current = [];
