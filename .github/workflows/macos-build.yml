@@ -33,6 +33,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build macOS app (Apple Silicon, unsigned)
+        env:
+          NODE_OPTIONS: --max-old-space-size=5120
         run: pnpm tauri build --target aarch64-apple-darwin --bundles app,dmg
 
       - name: Upload macOS bundle
